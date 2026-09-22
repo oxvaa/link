@@ -30,7 +30,16 @@ import QRCode from 'react-native-qrcode-svg';
 
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
-const BUILD = 'LINK 0.5.0';
+const BUILD = 'LINK 0.6.0';
+const LINK_PLUS_PLANS = {
+  monthly: { id: 'monthly', label: 'Monthly', price: 79, periodLabel: 'month', bonusCoins: 400, days: 30 },
+  annual: { id: 'annual', label: 'Annual', price: 649, periodLabel: 'year', bonusCoins: 1500, days: 365 },
+};
+const LINK_PLUS_SHOP_DISCOUNT = 0.15;
+const PLUS_STATUS_COLORS = ['#FFD60A', '#64D2FF', '#BF5AF2', '#FF375F', '#30D158'];
+const PLUS_STATUS_ICONS = ['diamond', 'planet', 'rocket', 'skull', 'rose'];
+const subscriptionIsActive = (sub) => !!(sub?.active && (!sub.expiresAt || sub.expiresAt > Date.now()));
+const discountedEffectPrice = (price, plusActive) => plusActive ? Math.max(1, Math.round(price * (1 - LINK_PLUS_SHOP_DISCOUNT))) : price;
 
 const light = {
   bg: '#F6F7FB', card: '#FFFFFF', elevated: '#FFFFFF', text: '#111318', sub: '#6F7582',
@@ -105,7 +114,7 @@ function initialData() {
   const keySD = threadKey('local_simi', 'demo_david');
 
   return {
-    version: 5,
+    version: 6,
     themeSetting: 'light',
     activeAccountId: 'local_simi',
     localAccountIds: ['local_simi', 'local_nela', 'local_alex'],
@@ -163,6 +172,11 @@ function initialData() {
       local_simi: [],
       local_nela: ['fx_widow'],
       local_alex: [],
+    },
+    subscriptions: {
+      local_simi: null,
+      local_nela: null,
+      local_alex: null,
     },
   };
 }
@@ -252,6 +266,13 @@ function Pill({ children, theme, tone = 'soft' }) {
   const bg = tone === 'accent' ? ACCENT : tone === 'success' ? 'rgba(31,157,102,.12)' : theme.soft;
   const color = tone === 'accent' ? '#fff' : tone === 'success' ? theme.success : theme.sub;
   return <View style={[styles.pill, { backgroundColor: bg }]}><Text style={[styles.pillText, { color }]}>{children}</Text></View>;
+}
+
+function PlusBadge({ compact = false }) {
+  return <View style={[styles.plusBadge, compact && styles.plusBadgeCompact]}>
+    <Ionicons name="sparkles" size={compact ? 10 : 12} color="#fff" />
+    <Text style={[styles.plusBadgeText, compact && { fontSize: 9 }]}>PLUS</Text>
+  </View>;
 }
 
 function StatusBadge({ person, theme, compact = false }) {
@@ -579,8 +600,9 @@ function SettingsRow({ theme, icon, title, subtitle, right, last = false }) {
   return <View style={[styles.settingsRow, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}><View style={[styles.settingsIcon, { backgroundColor: theme.soft }]}><Ionicons name={icon} size={18} color={theme.text} /></View><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{subtitle}</Text></View>{right}</View>;
 }
 
-function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setThemeSetting, privacy, setPrivacy, openAccountSwitcher, openCustomStatus, openShop, resetDemo }) {
+function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setThemeSetting, privacy, setPrivacy, openAccountSwitcher, openCustomStatus, openShop, openPlus, plusSubscription, resetDemo }) {
   const [editing, setEditing] = useState(false);
+  const plusActive = subscriptionIsActive(plusSubscription);
   const [draft, setDraft] = useState(activeProfile);
   useEffect(() => setDraft(activeProfile), [activeProfile]);
   const save = () => {
@@ -626,8 +648,15 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
           <TextInput value={draft.bio} onChangeText={bio => setDraft({ ...draft, bio })} placeholder="Short bio" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
           <TextInput value={draft.socials?.instagram || ''} onChangeText={instagram => setDraft({ ...draft, socials: { ...(draft.socials || {}), instagram } })} autoCapitalize="none" placeholder="Instagram @handle" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
           <TextInput value={draft.socials?.spotify || ''} onChangeText={spotify => setDraft({ ...draft, socials: { ...(draft.socials || {}), spotify } })} placeholder="Spotify name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
-        </View> : <><Text style={[styles.profileName, { color: theme.text }]}>{activeProfile.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{activeProfile.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{activeProfile.bio}</Text><StatusBadge person={activeProfile} theme={theme} /></>}
+        </View> : <><View style={styles.profileNameWithBadge}><Text style={[styles.profileName, { color: theme.text }]}>{activeProfile.name}</Text>{plusActive ? <PlusBadge /> : null}</View><Text style={[styles.profileUser, { color: theme.sub }]}>{activeProfile.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{activeProfile.bio}</Text><StatusBadge person={activeProfile} theme={theme} /></>}
       </View>
+
+      <SectionTitle theme={theme} action={plusActive ? 'Manage' : 'See plans'} onAction={openPlus}>LINK Plus</SectionTitle>
+      <Pressable onPress={openPlus} style={[styles.plusEntryCard, { backgroundColor: plusActive ? theme.inverse : theme.card, borderColor: plusActive ? theme.inverse : theme.border }]}>
+        <View style={[styles.plusEntryIcon, { backgroundColor: plusActive ? theme.inverseText : '#111318' }]}><Ionicons name="sparkles" size={22} color={plusActive ? theme.inverse : '#fff'} /></View>
+        <View style={{ flex: 1 }}><View style={styles.inlineNameRow}><Text style={[styles.settingsTitle, { color: plusActive ? theme.inverseText : theme.text }]}>{plusActive ? 'LINK Plus is active' : 'Upgrade to LINK Plus'}</Text>{plusActive ? <PlusBadge compact /> : null}</View><Text style={[styles.settingsSub, { color: plusActive ? theme.inverseText : theme.sub, opacity: plusActive ? .68 : 1 }]}>{plusActive ? `${plusSubscription?.plan === 'annual' ? 'Annual' : 'Monthly'} plan · premium perks unlocked` : 'From 54 Kč/month on annual · better Notes, Shop savings & more'}</Text></View>
+        <Ionicons name="chevron-forward" size={20} color={plusActive ? theme.inverseText : theme.sub} />
+      </Pressable>
 
       <SectionTitle theme={theme} action="Open shop" onAction={openShop}>Profile effects</SectionTitle>
       <Pressable onPress={openShop} style={[styles.shopEntryCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -657,7 +686,7 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
         <SettingsRow theme={theme} icon="aperture-outline" title="Moments to LINKs" subtitle="Only linked people can see your Moments" right={<Switch value={privacy.momentsToLinks} onValueChange={v => setPrivacy({ ...privacy, momentsToLinks: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} last />
       </View>
       <View style={[styles.gestureTip, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="return-up-back-outline" size={20} color={ACCENT} /><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Swipe to go back</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>On detail pages, swipe right from the left edge to go back. In chat, swipe a message right to reply.</Text></View></View>
-      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.4 demo</Text></Pressable>
+      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.6 demo</Text></Pressable>
     </ScrollView>
   );
 }
@@ -769,15 +798,15 @@ function CreateAccountModal({ visible, onClose, theme, onCreate, existingProfile
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={[styles.sheetCard, { backgroundColor: theme.card }]}><View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>New local account</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>Create another test identity</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View><View style={{ gap: 10, marginTop: 18 }}><TextInput value={name} onChangeText={setName} placeholder="Display name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" placeholder="@username" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /><TextInput value={bio} onChangeText={setBio} placeholder="Short bio" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /></View><Pressable onPress={submit} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Text style={{ color: theme.inverseText, fontWeight: '800' }}>Create & switch</Text></Pressable></View></View></Modal>;
 }
 
-function PersonProfileModal({ visible, onClose, theme, person, connected, privacy, favorite = false, onToggleFavorite, onChat, onSendRequest, onWave }) {
+function PersonProfileModal({ visible, onClose, theme, person, connected, privacy, plusActive = false, favorite = false, onToggleFavorite, onChat, onSendRequest, onWave }) {
   if (!person) return null;
   const showSocials = privacy?.showSocials !== false;
   const showStatus = privacy?.showStatus !== false;
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.profileModal, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><Pill theme={theme}>{person.isLocal ? 'LOCAL ACCOUNT' : 'LINK PROFILE'}</Pill><IconButton icon="close" onPress={onClose} theme={theme} /></View><EffectAvatarStage person={person} size={84} effectSize={190} theme={theme} /><Text style={[styles.profileName, { color: theme.text }]}>{person.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{person.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{person.bio}</Text>{showStatus ? <StatusBadge person={person} theme={theme} /> : null}{showSocials ? <View style={[styles.socialBox, { backgroundColor: theme.soft }]}><View style={styles.socialLine}><Ionicons name="logo-instagram" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.instagram || person.username}</Text></View><View style={styles.socialLine}><Ionicons name="musical-notes-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.spotify || person.name}</Text></View></View> : null}{connected ? <><View style={styles.profileActionRow}><Pressable onPress={() => { onClose(); onChat(); }} style={[styles.profilePrimaryAction, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble-ellipses" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Message</Text></Pressable><Pressable onPress={onToggleFavorite} style={[styles.profileSquareAction, { backgroundColor: favorite ? 'rgba(108,92,231,.14)' : theme.soft }]}><Ionicons name={favorite ? 'star' : 'star-outline'} size={21} color={favorite ? ACCENT : theme.text} /></Pressable></View><Pressable onPress={onWave} style={[styles.waveButton, { backgroundColor: theme.soft }]}><Ionicons name="hand-left-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '800' }}>Send a wave</Text></Pressable></> : <Pressable onPress={() => { onSendRequest?.(); onClose(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="link" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Send LINK request</Text></Pressable>}<Pressable onPress={() => Alert.alert('Safety', 'Block and report controls are prepared for server-backed moderation in a later build.')} style={[styles.safetyButton, { borderColor: theme.border }]}><Ionicons name="shield-outline" size={17} color={theme.sub} /><Text style={{ color: theme.sub, fontWeight: '700' }}>Safety options</Text></Pressable></Pressable></Pressable></Modal>;
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.profileModal, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><Pill theme={theme}>{person.isLocal ? 'LOCAL ACCOUNT' : 'LINK PROFILE'}</Pill><IconButton icon="close" onPress={onClose} theme={theme} /></View><EffectAvatarStage person={person} size={84} effectSize={190} theme={theme} /><View style={styles.profileNameWithBadge}><Text style={[styles.profileName, { color: theme.text }]}>{person.name}</Text>{plusActive ? <PlusBadge /> : null}</View><Text style={[styles.profileUser, { color: theme.sub }]}>{person.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{person.bio}</Text>{showStatus ? <StatusBadge person={person} theme={theme} /> : null}{showSocials ? <View style={[styles.socialBox, { backgroundColor: theme.soft }]}><View style={styles.socialLine}><Ionicons name="logo-instagram" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.instagram || person.username}</Text></View><View style={styles.socialLine}><Ionicons name="musical-notes-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.spotify || person.name}</Text></View></View> : null}{connected ? <><View style={styles.profileActionRow}><Pressable onPress={() => { onClose(); onChat(); }} style={[styles.profilePrimaryAction, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble-ellipses" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Message</Text></Pressable><Pressable onPress={onToggleFavorite} style={[styles.profileSquareAction, { backgroundColor: favorite ? 'rgba(108,92,231,.14)' : theme.soft }]}><Ionicons name={favorite ? 'star' : 'star-outline'} size={21} color={favorite ? ACCENT : theme.text} /></Pressable></View><Pressable onPress={onWave} style={[styles.waveButton, { backgroundColor: theme.soft }]}><Ionicons name="hand-left-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '800' }}>Send a wave</Text></Pressable></> : <Pressable onPress={() => { onSendRequest?.(); onClose(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="link" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Send LINK request</Text></Pressable>}<Pressable onPress={() => Alert.alert('Safety', 'Block and report controls are prepared for server-backed moderation in a later build.')} style={[styles.safetyButton, { borderColor: theme.border }]}><Ionicons name="shield-outline" size={17} color={theme.sub} /><Text style={{ color: theme.sub, fontWeight: '700' }}>Safety options</Text></Pressable></Pressable></Pressable></Modal>;
 }
 
 
-function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, onPurchase, onEquip, onRemove }) {
+function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, plusActive = false, onPurchase, onEquip, onRemove }) {
   const current = profileEffectById(profile?.profileEffectId);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -800,7 +829,7 @@ function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, onPurc
                 <Pressable onPress={onRemove} style={[styles.effectRemoveButton, { backgroundColor: theme.soft }]}><Ionicons name="close" size={17} color={theme.text} /></Pressable>
               </View> : null}
 
-              <View style={styles.shopSectionHeader}><View><Text style={[styles.sectionTitle, { color: theme.text }]}>Profile Effects</Text><Text style={[styles.usernameSearchHint, { color: theme.sub }]}>Your uploaded artwork, turned into animated LINK profile cosmetics.</Text></View><Pill theme={theme}>{PROFILE_EFFECTS.length} FX</Pill></View>
+              <View style={styles.shopSectionHeader}><View><Text style={[styles.sectionTitle, { color: theme.text }]}>Profile Effects</Text><Text style={[styles.usernameSearchHint, { color: theme.sub }]}>{plusActive ? 'LINK Plus discount is active — 15% off every effect.' : 'Your uploaded artwork, turned into animated LINK profile cosmetics.'}</Text></View>{plusActive ? <PlusBadge /> : <Pill theme={theme}>{PROFILE_EFFECTS.length} FX</Pill>}</View>
 
               <View style={styles.effectGrid}>
                 {PROFILE_EFFECTS.map(effect => {
@@ -816,11 +845,11 @@ function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, onPurc
                     <Text style={[styles.effectMeta, { color: theme.sub }]}>{effect.animation === 'pulse' ? 'Pulse' : effect.animation === 'drift' ? 'Drift' : 'Float'} animation</Text>
                     {equipped ? <View style={[styles.effectButton, { backgroundColor: effect.color }]}><Ionicons name="checkmark" size={15} color="#fff" /><Text style={styles.effectButtonText}>Equipped</Text></View>
                       : owned ? <Pressable onPress={() => onEquip(effect.id)} style={[styles.effectButton, { backgroundColor: theme.inverse }]}><Ionicons name="sparkles" size={14} color={theme.inverseText} /><Text style={[styles.effectButtonText, { color: theme.inverseText }]}>Use effect</Text></Pressable>
-                      : <Pressable onPress={() => onPurchase(effect.id)} style={[styles.effectButton, { backgroundColor: theme.inverse }]}><Text style={[styles.effectButtonText, { color: theme.inverseText }]}>✦ {effect.price}</Text></Pressable>}
+                      : <Pressable onPress={() => onPurchase(effect.id)} style={[styles.effectButton, { backgroundColor: theme.inverse }]}>{plusActive ? <><Text style={[styles.effectOldPrice, { color: theme.inverseText }]}>✦ {effect.price}</Text><Text style={[styles.effectButtonText, { color: theme.inverseText }]}>✦ {discountedEffectPrice(effect.price, true)}</Text></> : <Text style={[styles.effectButtonText, { color: theme.inverseText }]}>✦ {effect.price}</Text>}</Pressable>}
                   </View>;
                 })}
               </View>
-              <View style={[styles.shopFootnote, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="information-circle-outline" size={19} color={theme.sub} /><Text style={[styles.settingsSub, { color: theme.sub, flex: 1 }]}>Purchases in this build use local LINK Coins only. No real payment is charged.</Text></View>
+              <View style={[styles.shopFootnote, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="information-circle-outline" size={19} color={theme.sub} /><Text style={[styles.settingsSub, { color: theme.sub, flex: 1 }]}>{plusActive ? 'LINK Plus saves 15% on every Profile Effect. Purchases still use local LINK Coins only.' : 'Purchases in this build use local LINK Coins only. No real payment is charged.'}</Text></View>
             </ScrollView>
           </SafeAreaView>
         </View>
@@ -830,7 +859,7 @@ function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, onPurc
 }
 
 
-function NoteComposerModal({ visible, onClose, theme, currentNote, onSave, onDelete }) {
+function NoteComposerModal({ visible, onClose, theme, currentNote, plusActive = false, onSave, onDelete }) {
   const [text, setText] = useState('');
   const [emoji, setEmoji] = useState('💭');
   const [audience, setAudience] = useState('links');
@@ -850,7 +879,7 @@ function NoteComposerModal({ visible, onClose, theme, currentNote, onSave, onDel
   };
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
     <Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.noteComposerCard, { backgroundColor: theme.card }]} onPress={() => {}}>
-      <View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Your Note</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>Lives above your avatar for 24 hours.</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+      <View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Your Note</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>{plusActive ? 'LINK Plus Note · stays live for 72 hours.' : 'Lives above your avatar for 24 hours.'}</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
       <View style={[styles.notePreviewBig, { backgroundColor: theme.soft, borderColor: theme.border }]}><Text style={styles.notePreviewEmoji}>{emoji}</Text><Text numberOfLines={2} style={[styles.notePreviewText, { color: theme.text }]}>{text.trim() || 'What’s on your mind?'}</Text></View>
       <TextInput value={text} onChangeText={v => setText(v.slice(0, 60))} placeholder="Leave a note…" placeholderTextColor={theme.sub} maxLength={60} style={[styles.noteInput, { backgroundColor: theme.input, color: theme.text }]} />
       <View style={styles.noteMetaLine}><Text style={[styles.settingsSub, { color: theme.sub }]}>Emoji</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{text.length}/60</Text></View>
@@ -884,7 +913,7 @@ function NoteReplyModal({ visible, onClose, theme, note, person, onReply }) {
   </Modal>;
 }
 
-function CustomStatusModal({ visible, onClose, theme, profile, onSave }) {
+function CustomStatusModal({ visible, onClose, theme, profile, plusActive = false, onSave }) {
   const meta = getStatusMeta(profile);
   const [label, setLabel] = useState(meta.label);
   const [icon, setIcon] = useState(meta.icon);
@@ -897,11 +926,73 @@ function CustomStatusModal({ visible, onClose, theme, profile, onSave }) {
       <View style={[styles.customStatusHero, { backgroundColor: theme.soft }]}><Avatar person={profile} size={52} theme={theme} /><View style={{ flex: 1 }}><Text style={[styles.personName, { color: theme.text }]}>{profile.name}</Text><View style={{ marginTop: 6 }}><StatusBadge person={preview} theme={theme} /></View></View></View>
       <TextInput value={label} onChangeText={v => setLabel(v.slice(0, 28))} maxLength={28} placeholder="e.g. Studio all night" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text, marginTop: 16 }]} />
       <Text style={[styles.settingsSub, { color: theme.sub, marginTop: 14 }]}>Icon</Text>
-      <View style={styles.statusIconGrid}>{STATUS_ICONS.map(i => <Pressable key={i} onPress={() => setIcon(i)} style={[styles.statusIconChoice, { backgroundColor: icon === i ? `${color}20` : theme.soft, borderColor: icon === i ? `${color}66` : 'transparent' }]}><Ionicons name={i} size={20} color={icon === i ? color : theme.sub} /></Pressable>)}</View>
+      <View style={styles.statusIconGrid}>{[...STATUS_ICONS, ...(plusActive ? PLUS_STATUS_ICONS : [])].map(i => <Pressable key={i} onPress={() => setIcon(i)} style={[styles.statusIconChoice, { backgroundColor: icon === i ? `${color}20` : theme.soft, borderColor: icon === i ? `${color}66` : 'transparent' }]}><Ionicons name={i} size={20} color={icon === i ? color : theme.sub} /></Pressable>)}</View>{!plusActive ? <Text style={[styles.plusUnlockHint, { color: theme.sub }]}>LINK Plus unlocks 5 extra premium icons.</Text> : null}
       <Text style={[styles.settingsSub, { color: theme.sub, marginTop: 14 }]}>Color</Text>
-      <View style={styles.statusColorGrid}>{STATUS_COLORS.map(c => <Pressable key={c} onPress={() => setColor(c)} style={[styles.statusColorChoice, { backgroundColor: c, borderColor: color === c ? theme.text : 'transparent' }]}>{color === c ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}</Pressable>)}</View>
+      <View style={styles.statusColorGrid}>{[...STATUS_COLORS, ...(plusActive ? PLUS_STATUS_COLORS : [])].map(c => <Pressable key={c} onPress={() => setColor(c)} style={[styles.statusColorChoice, { backgroundColor: c, borderColor: color === c ? theme.text : 'transparent' }]}>{color === c ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}</Pressable>)}</View>{!plusActive ? <Text style={[styles.plusUnlockHint, { color: theme.sub }]}>LINK Plus unlocks 5 extra premium colors.</Text> : null}
       <Pressable onPress={() => { if (!label.trim()) return Alert.alert('Status text', 'Add a short custom status.'); onSave({ status: label.trim(), statusIcon: icon, statusColor: color }); onClose(); }} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Ionicons name="checkmark" size={17} color={theme.inverseText} /><Text style={{ color: theme.inverseText, fontWeight: '900' }}>Use custom status</Text></Pressable>
     </Pressable></Pressable>
+  </Modal>;
+}
+
+
+function LinkPlusModal({ visible, onClose, theme, subscription, onActivate, onCancel }) {
+  const [selected, setSelected] = useState('annual');
+  const active = subscriptionIsActive(subscription);
+  const plan = active ? LINK_PLUS_PLANS[subscription.plan] : LINK_PLUS_PLANS[selected];
+  const monthlyEquivalent = Math.round(LINK_PLUS_PLANS.annual.price / 12);
+  const annualSavings = LINK_PLUS_PLANS.monthly.price * 12 - LINK_PLUS_PLANS.annual.price;
+  const features = [
+    ['pricetag-outline', '15% off LINK Shop', 'Every animated Profile Effect costs fewer LINK Coins.'],
+    ['chatbubble-ellipses-outline', '72-hour Notes', 'Keep your Note live for 3 days instead of 24 hours.'],
+    ['sparkles-outline', 'Plus badge', 'Show a premium LINK Plus badge on your profile.'],
+    ['color-palette-outline', 'Premium custom status pack', 'Extra colors and icons for your custom status.'],
+    ['diamond-outline', 'LINK Coin bonus', '400 Coins monthly or 1,500 Coins with annual.'],
+    ['flash-outline', 'Early access', 'Get first access to new Profile Effects and social experiments.'],
+  ];
+  return <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <EdgeSwipeBack onBack={onClose}>
+      <View style={[styles.plusPage, { backgroundColor: theme.bg }]}>
+        <SafeAreaView style={styles.flexOne}>
+          <View style={styles.plusHeader}><View><Text style={[styles.bigTitle, { color: theme.text }]}>LINK Plus</Text><Text style={[styles.headerSub, { color: theme.sub }]}>More identity. More expression. Less limits.</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+          <ScrollView contentContainerStyle={styles.plusScroll} showsVerticalScrollIndicator={false}>
+            <View style={[styles.plusHero, { backgroundColor: theme.inverse }]}>
+              <View style={styles.plusHeroTop}><View style={[styles.plusHeroIcon, { backgroundColor: theme.inverseText }]}><Ionicons name="sparkles" size={25} color={theme.inverse} /></View><PlusBadge /></View>
+              <Text style={[styles.plusHeroTitle, { color: theme.inverseText }]}>{active ? 'You’re on LINK Plus.' : 'Make your LINK feel more yours.'}</Text>
+              <Text style={[styles.plusHeroBody, { color: theme.inverseText }]}>{active ? `Your ${plan?.label || 'Plus'} plan is active on this local account.` : 'Premium profile tools and practical perks without locking basic LINK features behind a paywall.'}</Text>
+              {active && subscription?.expiresAt ? <Text style={[styles.plusRenewText, { color: theme.inverseText }]}>Renews / expires {new Date(subscription.expiresAt).toLocaleDateString()}</Text> : null}
+            </View>
+
+            {!active ? <View style={styles.plusPlanRow}>
+              {Object.values(LINK_PLUS_PLANS).map(p => {
+                const chosen = selected === p.id;
+                const annual = p.id === 'annual';
+                return <Pressable key={p.id} onPress={() => setSelected(p.id)} style={[styles.plusPlanCard, { backgroundColor: theme.card, borderColor: chosen ? ACCENT : theme.border }, chosen && styles.plusPlanCardActive]}>
+                  {annual ? <View style={styles.plusSaveBadge}><Text style={styles.plusSaveText}>SAVE {annualSavings} Kč</Text></View> : null}
+                  <Text style={[styles.plusPlanName, { color: theme.text }]}>{p.label}</Text>
+                  <Text style={[styles.plusPlanPrice, { color: theme.text }]}>{p.price} Kč</Text>
+                  <Text style={[styles.plusPlanPeriod, { color: theme.sub }]}>/{p.periodLabel}</Text>
+                  {annual ? <Text style={[styles.plusPlanEquivalent, { color: ACCENT }]}>≈ {monthlyEquivalent} Kč/month</Text> : <Text style={[styles.plusPlanEquivalent, { color: theme.sub }]}>Cancel anytime</Text>}
+                  <View style={[styles.plusRadio, { borderColor: chosen ? ACCENT : theme.border, backgroundColor: chosen ? ACCENT : 'transparent' }]}>{chosen ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}</View>
+                </Pressable>;
+              })}
+            </View> : null}
+
+            <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 22, marginBottom: 10 }]}>Everything in Plus</Text>
+            <View style={[styles.plusFeatureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              {features.map(([icon, title, body], i) => <View key={title} style={[styles.plusFeatureRow, i === features.length - 1 && { borderBottomWidth: 0 }]}>
+                <View style={[styles.plusFeatureIcon, { backgroundColor: theme.soft }]}><Ionicons name={icon} size={19} color={ACCENT} /></View>
+                <View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{body}</Text></View>
+              </View>)}
+            </View>
+
+            {active ? <Pressable onPress={onCancel} style={[styles.plusCancelButton, { borderColor: theme.border }]}><Text style={{ color: theme.danger, fontWeight: '900' }}>Cancel LINK Plus</Text></Pressable>
+            : <Pressable onPress={() => onActivate(selected)} style={[styles.plusActivateButton, { backgroundColor: theme.inverse }]}><Ionicons name="sparkles" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Get {LINK_PLUS_PLANS[selected].label} · {LINK_PLUS_PLANS[selected].price} Kč</Text></Pressable>}
+
+            <Text style={[styles.plusLegal, { color: theme.sub }]}>Prototype subscription only. No real payment is charged in this local build. Production billing can later be connected to App Store / Google Play subscriptions.</Text>
+          </ScrollView>
+        </SafeAreaView>
+      </View>
+    </EdgeSwipeBack>
   </Modal>;
 }
 
@@ -963,6 +1054,7 @@ export default function App() {
   const [noteReplyId, setNoteReplyId] = useState(null);
   const [customStatusOpen, setCustomStatusOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
 
   const activeMode = data.themeSetting === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : data.themeSetting;
   const theme = activeMode === 'dark' ? dark : light;
@@ -975,6 +1067,8 @@ export default function App() {
   const favoriteIds = data.favorites?.[data.activeAccountId] || [];
   const activeWallet = data.wallets?.[data.activeAccountId] ?? 0;
   const activeOwnedEffects = data.ownedEffects?.[data.activeAccountId] || [];
+  const activeSubscription = data.subscriptions?.[data.activeAccountId] || null;
+  const activePlus = subscriptionIsActive(activeSubscription);
   const activeChatPerson = activeChatId ? data.profiles[activeChatId] : null;
   const activeMessages = activeChatId ? data.conversations[threadKey(data.activeAccountId, activeChatId)] || [] : [];
   const profileModalPerson = profileModalId ? data.profiles[profileModalId] : null;
@@ -1000,18 +1094,21 @@ export default function App() {
             Object.entries(saved.profiles || {}).forEach(([id, profile]) => { mergedProfiles[id] = { ...(base.profiles[id] || {}), ...profile }; });
             const mergedWallets = { ...base.wallets, ...(saved.wallets || {}) };
             const mergedOwnedEffects = { ...base.ownedEffects, ...(saved.ownedEffects || {}) };
+            const mergedSubscriptions = { ...base.subscriptions, ...(saved.subscriptions || {}) };
             (saved.localAccountIds || base.localAccountIds).forEach(id => {
               if (mergedWallets[id] == null) mergedWallets[id] = 2200;
               if (!Array.isArray(mergedOwnedEffects[id])) mergedOwnedEffects[id] = [];
+              if (!(id in mergedSubscriptions)) mergedSubscriptions[id] = null;
             });
             setData({
-              ...base, ...saved, version: 5,
+              ...base, ...saved, version: 6,
               profiles: mergedProfiles,
               privacy: { ...base.privacy, ...(saved.privacy || {}) },
               notifications: { ...base.notifications, ...(saved.notifications || {}) },
               favorites: { ...base.favorites, ...(saved.favorites || {}) },
               wallets: mergedWallets,
               ownedEffects: mergedOwnedEffects,
+              subscriptions: mergedSubscriptions,
               notes: Array.isArray(saved.notes) ? saved.notes : base.notes,
             });
           }
@@ -1047,6 +1144,7 @@ export default function App() {
       privacy: { ...prev.privacy, [id]: { showStatus: true, showSocials: true, momentsToLinks: true } },
       wallets: { ...(prev.wallets || {}), [id]: 2200 },
       ownedEffects: { ...(prev.ownedEffects || {}), [id]: [] },
+      subscriptions: { ...(prev.subscriptions || {}), [id]: null },
     }));
     setCreateAccountOpen(false); setAccountsOpen(false); setTab('home');
   };
@@ -1154,7 +1252,9 @@ export default function App() {
     mutate(prev => {
       const clean = (prev.notes || []).filter(n => n.ownerId !== prev.activeAccountId);
       const now = Date.now();
-      return { ...prev, notes: [{ id: uid('note'), ownerId: prev.activeAccountId, text, emoji, audience, createdAt: now, expiresAt: now + 24 * 60 * 60 * 1000 }, ...clean] };
+      const plus = subscriptionIsActive(prev.subscriptions?.[prev.activeAccountId]);
+      const durationHours = plus ? 72 : 24;
+      return { ...prev, notes: [{ id: uid('note'), ownerId: prev.activeAccountId, text, emoji, audience, createdAt: now, expiresAt: now + durationHours * 60 * 60 * 1000 }, ...clean] };
     });
   };
   const deleteOwnNote = () => mutate(prev => ({ ...prev, notes: (prev.notes || []).filter(n => n.ownerId !== prev.activeAccountId) }));
@@ -1190,16 +1290,19 @@ ${text}` });
       const owned = prev.ownedEffects?.[accountId] || [];
       if (owned.includes(effectId)) return { ...prev, profiles: { ...prev.profiles, [accountId]: { ...prev.profiles[accountId], profileEffectId: effectId } } };
       const balance = prev.wallets?.[accountId] ?? 0;
-      if (balance < effect.price) return prev;
+      const plus = subscriptionIsActive(prev.subscriptions?.[accountId]);
+      const price = discountedEffectPrice(effect.price, plus);
+      if (balance < price) return prev;
       return {
         ...prev,
-        wallets: { ...(prev.wallets || {}), [accountId]: balance - effect.price },
+        wallets: { ...(prev.wallets || {}), [accountId]: balance - price },
         ownedEffects: { ...(prev.ownedEffects || {}), [accountId]: [...owned, effectId] },
         profiles: { ...prev.profiles, [accountId]: { ...prev.profiles[accountId], profileEffectId: effectId } },
       };
     });
     if (activeOwnedEffects.includes(effectId)) return;
-    if (activeWallet < effect.price) Alert.alert('Not enough LINK Coins', `You need ✦ ${effect.price}. Your balance is ✦ ${activeWallet}.`);
+    const currentPrice = discountedEffectPrice(effect.price, activePlus);
+    if (activeWallet < currentPrice) Alert.alert('Not enough LINK Coins', `You need ✦ ${currentPrice}. Your balance is ✦ ${activeWallet}.`);
   };
 
   const equipEffect = (effectId) => {
@@ -1209,11 +1312,38 @@ ${text}` });
 
   const removeEffect = () => updateActiveProfile({ ...activeProfile, profileEffectId: null });
 
-  const resetDemo = () => Alert.alert('Reset LINK 0.5?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
+  const activatePlus = (planId) => {
+    const plan = LINK_PLUS_PLANS[planId];
+    if (!plan) return;
+    mutate(prev => {
+      const accountId = prev.activeAccountId;
+      const now = Date.now();
+      const currentBalance = prev.wallets?.[accountId] ?? 0;
+      return {
+        ...prev,
+        subscriptions: { ...(prev.subscriptions || {}), [accountId]: { active: true, plan: plan.id, startedAt: now, expiresAt: now + plan.days * 24 * 60 * 60 * 1000 } },
+        wallets: { ...(prev.wallets || {}), [accountId]: currentBalance + plan.bonusCoins },
+      };
+    });
+    setPlusOpen(false);
+    Alert.alert('Welcome to LINK Plus ✦', `${plan.label} activated. You also received ✦ ${plan.bonusCoins} LINK Coins in this prototype.`);
+  };
+
+  const cancelPlus = () => {
+    Alert.alert('Cancel LINK Plus?', 'Your Plus perks will be disabled immediately in this local prototype.', [
+      { text: 'Keep Plus', style: 'cancel' },
+      { text: 'Cancel Plus', style: 'destructive', onPress: () => {
+        mutate(prev => ({ ...prev, subscriptions: { ...(prev.subscriptions || {}), [prev.activeAccountId]: null } }));
+        setPlusOpen(false);
+      }},
+    ]);
+  };
+
+  const resetDemo = () => Alert.alert('Reset LINK 0.6?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
 
   if (!hydrated || !activeProfile) return <View style={[styles.loading, { backgroundColor: light.bg }]}><View style={styles.loadingLogo}><Text style={styles.loadingLogoText}>L*</Text></View><Text style={{ fontWeight: '900', color: light.text, fontSize: 17 }}>LINK</Text><Text style={{ color: light.sub, fontSize: 12 }}>{BUILD}</Text></View>;
 
-  if (activeChatPerson) return <><RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} /><ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatPerson} messages={activeMessages} profiles={data.profiles} onBack={() => setActiveChatId(null)} onSend={sendMessage} onReact={reactMessage} onDelete={deleteMessage} onOpenProfile={p => setProfileModalId(p.id)} markRead={markRead} /><PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} /></>;
+  if (activeChatPerson) return <><RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} /><ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatPerson} messages={activeMessages} profiles={data.profiles} onBack={() => setActiveChatId(null)} onSend={sendMessage} onReact={reactMessage} onDelete={deleteMessage} onOpenProfile={p => setProfileModalId(p.id)} markRead={markRead} /><PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} plusActive={subscriptionIsActive(data.subscriptions?.[profileModalId])} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} /></>;
 
   return (
     <View style={[styles.app, { backgroundColor: theme.bg }]}>
@@ -1223,7 +1353,7 @@ ${text}` });
         {tab === 'people' && <PeopleScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} localAccountIds={data.localAccountIds} requests={data.requests} favoriteIds={favoriteIds} openProfile={p => setProfileModalId(p.id)} openChat={openChat} sendRequest={sendRequest} onAccept={acceptRequest} onDecline={declineRequest} />}
         {tab === 'link' && <LinkScreen theme={theme} activeProfile={activeProfile} payload={payload} localProfiles={localProfiles} relationships={data.relationships} requests={data.requests} openScanner={() => setScannerOpen(true)} openOwnCard={() => setCardOpen(true)} sendRequest={sendRequest} onAccept={acceptRequest} onDecline={declineRequest} />}
         {tab === 'chats' && <ChatsScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} conversations={data.conversations} favoriteIds={favoriteIds} openChat={openChat} />}
-        {tab === 'profile' && <ProfileScreen theme={theme} activeProfile={activeProfile} updateProfile={updateActiveProfile} themeSetting={data.themeSetting} setThemeSetting={setThemeSetting} privacy={privacy} setPrivacy={setPrivacy} openAccountSwitcher={() => setAccountsOpen(true)} openCustomStatus={() => setCustomStatusOpen(true)} openShop={() => setShopOpen(true)} resetDemo={resetDemo} />}
+        {tab === 'profile' && <ProfileScreen theme={theme} activeProfile={activeProfile} updateProfile={updateActiveProfile} themeSetting={data.themeSetting} setThemeSetting={setThemeSetting} privacy={privacy} setPrivacy={setPrivacy} openAccountSwitcher={() => setAccountsOpen(true)} openCustomStatus={() => setCustomStatusOpen(true)} openShop={() => setShopOpen(true)} openPlus={() => setPlusOpen(true)} plusSubscription={activeSubscription} resetDemo={resetDemo} />}
       </View><TabBar tab={tab} setTab={setTab} theme={theme} darkMode={activeMode === 'dark'} /></SafeAreaView>
 
       <ScannerModal visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={onScanned} />
@@ -1231,13 +1361,14 @@ ${text}` });
       <NotificationsModal visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} theme={theme} items={data.notifications[data.activeAccountId] || []} markAllRead={markNotificationsRead} />
       <AccountSwitcherModal visible={accountsOpen} onClose={() => setAccountsOpen(false)} theme={theme} localProfiles={localProfiles} activeId={data.activeAccountId} onSwitch={switchAccount} onCreate={() => { setAccountsOpen(false); setCreateAccountOpen(true); }} />
       <CreateAccountModal visible={createAccountOpen} onClose={() => setCreateAccountOpen(false)} theme={theme} onCreate={createLocalAccount} existingProfiles={data.profiles} />
-      <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} onSendRequest={() => profileModalId && sendRequest(profileModalId)} />
+      <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} plusActive={subscriptionIsActive(data.subscriptions?.[profileModalId])} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} onSendRequest={() => profileModalId && sendRequest(profileModalId)} />
       <MomentComposerModal visible={momentComposerOpen} onClose={() => setMomentComposerOpen(false)} theme={theme} activeProfile={activeProfile} onPost={postMoment} />
       <MomentViewerModal visible={!!momentViewId} onClose={() => setMomentViewId(null)} theme={theme} moment={momentView} owner={momentView ? data.profiles[momentView.ownerId] : null} />
-      <NoteComposerModal visible={noteComposerOpen} onClose={() => setNoteComposerOpen(false)} theme={theme} currentNote={ownNote} onSave={saveNote} onDelete={deleteOwnNote} />
+      <NoteComposerModal visible={noteComposerOpen} onClose={() => setNoteComposerOpen(false)} theme={theme} currentNote={ownNote} plusActive={activePlus} onSave={saveNote} onDelete={deleteOwnNote} />
       <NoteReplyModal visible={!!noteReplyId} onClose={() => setNoteReplyId(null)} theme={theme} note={noteReply} person={noteReplyPerson} onReply={text => noteReply && replyToNote(noteReply, text)} />
-      <ShopModal visible={shopOpen} onClose={() => setShopOpen(false)} theme={theme} profile={activeProfile} balance={activeWallet} ownedIds={activeOwnedEffects} onPurchase={purchaseEffect} onEquip={equipEffect} onRemove={removeEffect} />
-      <CustomStatusModal visible={customStatusOpen} onClose={() => setCustomStatusOpen(false)} theme={theme} profile={activeProfile} onSave={patch => updateActiveProfile({ ...activeProfile, ...patch })} />
+      <ShopModal visible={shopOpen} onClose={() => setShopOpen(false)} theme={theme} profile={activeProfile} balance={activeWallet} ownedIds={activeOwnedEffects} plusActive={activePlus} onPurchase={purchaseEffect} onEquip={equipEffect} onRemove={removeEffect} />
+      <LinkPlusModal visible={plusOpen} onClose={() => setPlusOpen(false)} theme={theme} subscription={activeSubscription} onActivate={activatePlus} onCancel={cancelPlus} />
+      <CustomStatusModal visible={customStatusOpen} onClose={() => setCustomStatusOpen(false)} theme={theme} profile={activeProfile} plusActive={activePlus} onSave={patch => updateActiveProfile({ ...activeProfile, ...patch })} />
     </View>
   );
 }
@@ -1331,5 +1462,40 @@ const styles = StyleSheet.create({
   effectButton: { height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
   effectButtonText: { color: '#fff', fontSize: 12, fontWeight: '900' },
   shopFootnote: { minHeight: 60, borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, padding: 13, flexDirection: 'row', gap: 9, alignItems: 'center', marginTop: 14 },
+
+
+  plusBadge: { minHeight: 24, paddingHorizontal: 8, borderRadius: 999, backgroundColor: ACCENT, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  plusBadgeCompact: { minHeight: 20, paddingHorizontal: 6 },
+  plusBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: .45 },
+  profileNameWithBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  plusEntryCard: { minHeight: 84, borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  plusEntryIcon: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  plusUnlockHint: { fontSize: 10.5, lineHeight: 14, marginTop: 6 },
+  effectOldPrice: { fontSize: 9.5, fontWeight: '800', opacity: .5, textDecorationLine: 'line-through' },
+  plusPage: { flex: 1 },
+  plusHeader: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  plusScroll: { paddingHorizontal: 18, paddingBottom: 42 },
+  plusHero: { borderRadius: 30, padding: 22, marginTop: 8 },
+  plusHeroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  plusHeroIcon: { width: 52, height: 52, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  plusHeroTitle: { fontSize: 30, lineHeight: 32, fontWeight: '900', letterSpacing: -1.1, marginTop: 28, maxWidth: 320 },
+  plusHeroBody: { fontSize: 13.5, lineHeight: 20, marginTop: 10, opacity: .72, maxWidth: 330 },
+  plusRenewText: { fontSize: 11, fontWeight: '800', marginTop: 14, opacity: .62 },
+  plusPlanRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  plusPlanCard: { flex: 1, minHeight: 178, borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, padding: 16, position: 'relative' },
+  plusPlanCardActive: { borderWidth: 2 },
+  plusPlanName: { fontSize: 14, fontWeight: '900', marginTop: 4 },
+  plusPlanPrice: { fontSize: 28, fontWeight: '900', letterSpacing: -1, marginTop: 14 },
+  plusPlanPeriod: { fontSize: 11, fontWeight: '700', marginTop: 1 },
+  plusPlanEquivalent: { fontSize: 10.5, fontWeight: '800', marginTop: 10 },
+  plusRadio: { position: 'absolute', right: 12, bottom: 12, width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  plusSaveBadge: { alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 999, backgroundColor: ACCENT, marginBottom: 2 },
+  plusSaveText: { color: '#fff', fontSize: 8.5, fontWeight: '900', letterSpacing: .3 },
+  plusFeatureCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 26, paddingHorizontal: 15 },
+  plusFeatureRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(128,128,128,.16)', paddingVertical: 12 },
+  plusFeatureIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  plusActivateButton: { minHeight: 54, borderRadius: 18, marginTop: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  plusCancelButton: { minHeight: 50, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, marginTop: 18, alignItems: 'center', justifyContent: 'center' },
+  plusLegal: { fontSize: 10.5, lineHeight: 15, textAlign: 'center', marginTop: 12, paddingHorizontal: 12 },
 
 });
