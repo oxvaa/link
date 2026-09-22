@@ -1,56 +1,28 @@
-# LINK — Expo MVP 0.1.1
+# LINK 0.1.1
 
-**Meet IRL. Stay connected.**
+LINK is an Expo/React Native social MVP focused on meeting people IRL, exchanging a LINK card/QR, saving people and continuing in chat.
 
-LINK is a light-first social app concept for people you meet in real life. It supports Expo on iOS/Android and an Expo Web build that can be deployed automatically to GitHub Pages.
+## GitHub → Expo Snack workflow
 
-## Included
-- Light mode by default
-- Appearance switch: System / Light / Dark
-- Local profile editing and persistence
-- Shareable QR LINK Card
-- Real QR scanning with `expo-camera`
-- People list + search
-- Auto-created conversation after linking
-- Local chat persistence
-- Demo nearby-link button for testing on one device
-- Privacy / safety UI foundations
-- Expo Web support
-- GitHub Pages deployment workflow
+This repository is intentionally set up like the previous Snack launcher projects.
 
-## Entry files
-- `index.js` — Expo app entrypoint
-- `App.js` — complete LINK application
-- `index.html` — repository/root fallback page; the production Expo web build generates `dist/index.html`
-- `app.json` — Expo config
-- `app.config.js` — automatically configures the GitHub Pages repository subpath during Actions builds
+- `App.js` contains the LINK Expo app.
+- `index.html` is **not the app website**. It is a GitHub Pages launcher that generates/opens a new Expo Snack from the latest `App.js` in this repository.
+- `.github/workflows/pages.yml` publishes only that launcher to GitHub Pages.
 
-## Run in Expo
-```bash
-npm install
-npx expo start
-```
+### Use
 
-## Run on web
-```bash
-npm install
-npm run web
-```
+1. Upload this repository to GitHub with `App.js` and `index.html` in the repository root.
+2. In **Settings → Pages**, choose **GitHub Actions** as the source.
+3. Open the generated GitHub Pages URL.
+4. Tap **Vytvořit nový Snack**.
+5. The launcher verifies `App.js`, then opens Expo Snack with LINK and its required dependencies.
+6. Save the Snack in Expo if you want a persistent Snack URL.
 
-## Production web build
-```bash
-npm run build:web
-```
+The launcher automatically detects `OWNER/REPO` from a normal `https://OWNER.github.io/REPO/` GitHub Pages URL. For testing elsewhere, it also supports:
 
-Expo writes the website to `dist/`, including the production `dist/index.html`.
+`?owner=OWNER&repo=REPO&branch=main`
 
-## GitHub Pages
-1. Create a GitHub repository and upload the files from this project root.
-2. Make sure your default branch is `main`.
-3. In **Settings → Pages**, set **Source** to **GitHub Actions**.
-4. Push to `main` or run the **Deploy LINK to GitHub Pages** workflow manually.
+## App appearance
 
-The workflow installs dependencies, runs `expo export --platform web`, and deploys `dist/`. `app.config.js` automatically applies the repository subpath during the GitHub Actions build, so project Pages URLs such as `username.github.io/repository-name/` resolve Expo assets correctly.
-
-## MVP limitation
-Data currently lives locally on the device/browser. The QR handshake works, but messages are not yet transmitted between two users. Cross-device real-time chat will require authentication plus a backend such as Supabase or Firebase.
+LINK starts in Light mode. The app includes System / Light / Dark appearance controls.
