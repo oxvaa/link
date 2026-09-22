@@ -30,7 +30,7 @@ import QRCode from 'react-native-qrcode-svg';
 
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
-const BUILD = 'LINK 0.6.0';
+const BUILD = 'LINK 0.6.1';
 const LINK_PLUS_PLANS = {
   monthly: { id: 'monthly', label: 'Monthly', price: 79, periodLabel: 'month', bonusCoins: 400, days: 30 },
   annual: { id: 'annual', label: 'Annual', price: 649, periodLabel: 'year', bonusCoins: 1500, days: 365 },
@@ -686,7 +686,7 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
         <SettingsRow theme={theme} icon="aperture-outline" title="Moments to LINKs" subtitle="Only linked people can see your Moments" right={<Switch value={privacy.momentsToLinks} onValueChange={v => setPrivacy({ ...privacy, momentsToLinks: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} last />
       </View>
       <View style={[styles.gestureTip, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="return-up-back-outline" size={20} color={ACCENT} /><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Swipe to go back</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>On detail pages, swipe right from the left edge to go back. In chat, swipe a message right to reply.</Text></View></View>
-      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.6 demo</Text></Pressable>
+      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.6.1 demo</Text></Pressable>
     </ScrollView>
   );
 }
@@ -1339,7 +1339,7 @@ ${text}` });
     ]);
   };
 
-  const resetDemo = () => Alert.alert('Reset LINK 0.6?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
+  const resetDemo = () => Alert.alert('Reset LINK 0.6.1?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
 
   if (!hydrated || !activeProfile) return <View style={[styles.loading, { backgroundColor: light.bg }]}><View style={styles.loadingLogo}><Text style={styles.loadingLogoText}>L*</Text></View><Text style={{ fontWeight: '900', color: light.text, fontSize: 17 }}>LINK</Text><Text style={{ color: light.sub, fontSize: 12 }}>{BUILD}</Text></View>;
 
@@ -1411,7 +1411,7 @@ const styles = StyleSheet.create({
   profilePhotoButton: { position: 'relative', alignSelf: 'center' }, photoEditBadge: { position: 'absolute', right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
   gestureTip: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 22 },
   profileActionRow: { width: '100%', flexDirection: 'row', gap: 9, marginTop: 18 }, profilePrimaryAction: { flex: 1, minHeight: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }, profileSquareAction: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, waveButton: { width: '100%', minHeight: 46, borderRadius: 15, marginTop: 9, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
-  profileCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 28, padding: 22, alignItems: 'center', marginBottom: 12 }, profileName: { fontSize: 24, fontWeight: '900', marginTop: 14, letterSpacing: -.7 }, profileUser: { fontSize: 14, marginTop: 3 }, profileBio: { fontSize: 13.5, marginTop: 10, marginBottom: 12, textAlign: 'center' }, profileInput: { width: '100%', minHeight: 46, borderRadius: 14, paddingHorizontal: 14, fontSize: 15 },
+  profileCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 28, padding: 22, alignItems: 'center', marginBottom: 12 }, profileName: { fontSize: 24, fontWeight: '900', letterSpacing: -.7 }, profileUser: { fontSize: 14, marginTop: 3 }, profileBio: { fontSize: 13.5, marginTop: 10, marginBottom: 12, textAlign: 'center' }, profileInput: { width: '100%', minHeight: 46, borderRadius: 14, paddingHorizontal: 14, fontSize: 15 },
   statusRow: { gap: 8, paddingBottom: 4 }, statusChoice: { minHeight: 38, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 6 }, customStatusPreview: { marginTop: 10, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
   accountManagerButton: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11 },
   themeRow: { flexDirection: 'row', gap: 8 }, themeOption: { flex: 1, minHeight: 48, borderRadius: 16, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' }, settingHint: { fontSize: 12, lineHeight: 18, marginTop: 9, marginBottom: 4 },
@@ -1467,7 +1467,7 @@ const styles = StyleSheet.create({
   plusBadge: { minHeight: 24, paddingHorizontal: 8, borderRadius: 999, backgroundColor: ACCENT, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   plusBadgeCompact: { minHeight: 20, paddingHorizontal: 6 },
   plusBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: .45 },
-  profileNameWithBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  profileNameWithBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14 },
   plusEntryCard: { minHeight: 84, borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   plusEntryIcon: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   plusUnlockHint: { fontSize: 10.5, lineHeight: 14, marginTop: 6 },
