@@ -5,6 +5,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   SafeAreaView,
@@ -20,12 +21,13 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
-const BUILD = 'LINK 0.2';
+const BUILD = 'LINK 0.3';
 
 const light = {
   bg: '#F6F7FB', card: '#FFFFFF', elevated: '#FFFFFF', text: '#111318', sub: '#6F7582',
@@ -71,7 +73,7 @@ function initialData() {
   const keySD = threadKey('local_simi', 'demo_david');
 
   return {
-    version: 2,
+    version: 3,
     themeSetting: 'light',
     activeAccountId: 'local_simi',
     localAccountIds: ['local_simi', 'local_nela', 'local_alex'],
@@ -105,6 +107,12 @@ function initialData() {
       local_nela: [],
       local_alex: [],
     },
+    favorites: {
+      local_simi: ['local_nela'],
+      local_nela: ['local_simi'],
+      local_alex: [],
+      demo_david: [],
+    },
     privacy: {
       local_simi: { showStatus: true, showSocials: true, momentsToLinks: true },
       local_nela: { showStatus: true, showSocials: true, momentsToLinks: true },
@@ -113,11 +121,29 @@ function initialData() {
   };
 }
 
+function EdgeSwipeBack({ onBack, children, enabled = true, style }) {
+  const panResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_, gesture) => {
+      if (!enabled) return false;
+      const fromLeftEdge = gesture.x0 <= 30;
+      const horizontal = Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25;
+      return fromLeftEdge && horizontal && gesture.dx > 8;
+    },
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dx > 72 && Math.abs(gesture.dy) < 90 && gesture.vx > 0.05) onBack?.();
+    },
+  }), [enabled, onBack]);
+
+  return <View style={[styles.edgeSwipePage, style]} {...panResponder.panHandlers}>{children}</View>;
+}
+
 function Avatar({ person, size = 48, theme, accent = ACCENT }) {
   const isLocal = person?.isLocal;
+  const radius = size / 2;
   return (
-    <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: isLocal ? accent : theme.soft }]}> 
-      <Text style={{ color: isLocal ? '#fff' : theme.text, fontWeight: '900', fontSize: size * 0.31 }}>{initialsFor(person?.name)}</Text>
+    <View style={[styles.avatar, { width: size, height: size, borderRadius: radius, backgroundColor: isLocal ? accent : theme.soft, overflow: 'hidden' }]}>
+      {person?.photoUri ? <Image source={{ uri: person.photoUri }} style={{ width: size, height: size }} resizeMode="cover" /> : <Text style={{ color: isLocal ? '#fff' : theme.text, fontWeight: '900', fontSize: size * 0.31 }}>{initialsFor(person?.name)}</Text>}
     </View>
   );
 }
@@ -205,13 +231,13 @@ function RequestCard({ request, profile, theme, onAccept, onDecline }) {
   );
 }
 
-function PersonRow({ person, theme, onPress, onChat, unread = 0 }) {
+function PersonRow({ person, theme, onPress, onChat, unread = 0, favorite = false }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.personRow, { backgroundColor: theme.card, borderColor: theme.border, opacity: pressed ? 0.74 : 1 }]}> 
       <View><Avatar person={person} size={50} theme={theme} />{unread ? <View style={styles.unreadDot} /> : null}</View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={styles.rowBetween}>
-          <Text numberOfLines={1} style={[styles.personName, { color: theme.text }]}>{person.name}</Text>
+          <View style={styles.inlineNameRow}><Text numberOfLines={1} style={[styles.personName, { color: theme.text }]}>{person.name}</Text>{favorite ? <Ionicons name="star" size={13} color={ACCENT} /> : null}</View>
           {person.isLocal ? <Pill theme={theme}>LOCAL</Pill> : null}
         </View>
         <Text numberOfLines={1} style={[styles.personSub, { color: theme.sub }]}>{person.username} · {person.status || 'Linked'}</Text>
@@ -223,7 +249,7 @@ function PersonRow({ person, theme, onPress, onChat, unread = 0 }) {
   );
 }
 
-function HomeScreen({ theme, activeProfile, connectedProfiles, conversations, activeId, requests, notifications, moments, profiles, openOwnCard, openScanner, openChat, openAccountSwitcher, openNotifications, onAccept, onDecline, onCreateMoment, onOpenMoment, setTab }) {
+function HomeScreen({ theme, activeProfile, connectedProfiles, conversations, activeId, requests, notifications, moments, profiles, favoriteIds, openOwnCard, openScanner, openChat, openAccountSwitcher, openNotifications, onAccept, onDecline, onCreateMoment, onOpenMoment, setTab }) {
   const unreadNotifs = (notifications[activeId] || []).filter(n => !n.read).length;
   const visibleMomentOwners = [activeId, ...connectedProfiles.map(p => p.id)];
   const unreadFor = (personId) => (conversations[threadKey(activeId, personId)] || []).filter(m => !m.readBy?.includes(activeId) && m.senderId !== activeId).length;
@@ -261,7 +287,7 @@ function HomeScreen({ theme, activeProfile, connectedProfiles, conversations, ac
       </View>
 
       <SectionTitle theme={theme} action="See all" onAction={() => setTab('people')}>Recently linked</SectionTitle>
-      {connectedProfiles.slice(0, 3).map(person => <PersonRow key={person.id} person={person} theme={theme} unread={unreadFor(person.id)} onPress={() => openChat(person)} onChat={() => openChat(person)} />)}
+      {[...connectedProfiles].sort((a, b) => Number(favoriteIds.includes(b.id)) - Number(favoriteIds.includes(a.id))).slice(0, 3).map(person => <PersonRow key={person.id} person={person} theme={theme} favorite={favoriteIds.includes(person.id)} unread={unreadFor(person.id)} onPress={() => openChat(person)} onChat={() => openChat(person)} />)}
 
       <View style={[styles.localLabCard, { backgroundColor: theme.inverse }]}> 
         <View style={{ flex: 1 }}><Text style={[styles.eyebrow, { color: theme.inverseText, opacity: .58 }]}>LOCAL ACCOUNTS LAB</Text><Text style={[styles.eventTitle, { color: theme.inverseText }]}>Test both sides.</Text><Text style={[styles.eventBody, { color: theme.inverseText, opacity: .7 }]}>Switch profiles, accept LINK requests and chat between accounts on this device.</Text></View>
@@ -271,9 +297,9 @@ function HomeScreen({ theme, activeProfile, connectedProfiles, conversations, ac
   );
 }
 
-function PeopleScreen({ theme, activeId, profiles, connectedIds, localAccountIds, requests, openProfile, openChat, sendRequest }) {
+function PeopleScreen({ theme, activeId, profiles, connectedIds, localAccountIds, requests, favoriteIds, openProfile, openChat, sendRequest }) {
   const [query, setQuery] = useState('');
-  const connected = connectedIds.map(id => profiles[id]).filter(Boolean);
+  const connected = connectedIds.map(id => profiles[id]).filter(Boolean).sort((a, b) => Number(favoriteIds.includes(b.id)) - Number(favoriteIds.includes(a.id)));
   const discover = localAccountIds.map(id => profiles[id]).filter(p => p && p.id !== activeId && !connectedIds.includes(p.id));
   const match = p => `${p.name} ${p.username} ${p.bio}`.toLowerCase().includes(query.toLowerCase());
   const pendingTo = (id) => requests.some(r => r.fromId === activeId && r.toId === id);
@@ -285,7 +311,7 @@ function PeopleScreen({ theme, activeId, profiles, connectedIds, localAccountIds
       <View style={[styles.searchBox, { backgroundColor: theme.input }]}><Ionicons name="search" size={19} color={theme.sub} /><TextInput placeholder="Search @username or name" placeholderTextColor={theme.sub} value={query} onChangeText={setQuery} style={[styles.searchInput, { color: theme.text }]} /></View>
       <ScrollView contentContainerStyle={styles.listPad} showsVerticalScrollIndicator={false}>
         <SectionTitle theme={theme}>Linked</SectionTitle>
-        {connected.filter(match).map(person => <PersonRow key={person.id} person={person} theme={theme} onPress={() => openProfile(person)} onChat={() => openChat(person)} />)}
+        {connected.filter(match).map(person => <PersonRow key={person.id} person={person} theme={theme} favorite={favoriteIds.includes(person.id)} onPress={() => openProfile(person)} onChat={() => openChat(person)} />)}
         {!connected.filter(match).length ? <Text style={[styles.emptyInline, { color: theme.sub }]}>No linked people match this search.</Text> : null}
 
         <SectionTitle theme={theme}>Discover local test accounts</SectionTitle>
@@ -331,14 +357,14 @@ function LinkScreen({ theme, activeProfile, payload, localProfiles, relationship
   );
 }
 
-function ChatsScreen({ theme, activeId, profiles, connectedIds, conversations, openChat }) {
+function ChatsScreen({ theme, activeId, profiles, connectedIds, conversations, favoriteIds, openChat }) {
   const rows = connectedIds.map(id => {
     const person = profiles[id];
     const convo = conversations[threadKey(activeId, id)] || [];
     const last = convo[convo.length - 1];
     const unread = convo.filter(m => !m.readBy?.includes(activeId) && m.senderId !== activeId).length;
-    return { person, last, unread };
-  }).filter(x => x.person).sort((a, b) => (b.last?.id || '').localeCompare(a.last?.id || ''));
+    return { person, last, unread, favorite: favoriteIds.includes(id) };
+  }).filter(x => x.person).sort((a, b) => Number(b.favorite) - Number(a.favorite) || (b.last?.id || '').localeCompare(a.last?.id || ''));
 
   return (
     <View style={styles.flexOne}>
@@ -347,7 +373,7 @@ function ChatsScreen({ theme, activeId, profiles, connectedIds, conversations, o
         renderItem={({ item }) => (
           <Pressable onPress={() => openChat(item.person)} style={({ pressed }) => [styles.chatRow, { borderBottomColor: theme.border, opacity: pressed ? .72 : 1 }]}> 
             <View><Avatar person={item.person} size={52} theme={theme} />{item.unread ? <View style={styles.unreadDot} /> : null}</View>
-            <View style={{ flex: 1, minWidth: 0 }}><View style={styles.rowBetween}><Text style={[styles.personName, { color: theme.text }]}>{item.person.name}</Text><Text style={[styles.metaText, { color: theme.sub }]}>{item.last?.time || ''}</Text></View><Text numberOfLines={1} style={[styles.chatPreview, { color: item.unread ? theme.text : theme.sub, fontWeight: item.unread ? '700' : '400' }]}>{item.last ? `${item.last.senderId === activeId ? 'You: ' : ''}${item.last.type === 'text' ? item.last.text : item.last.type === 'photo' ? '📷 Photo' : '🎙 Voice message'}` : 'Start the conversation'}</Text></View>
+            <View style={{ flex: 1, minWidth: 0 }}><View style={styles.rowBetween}><View style={styles.inlineNameRow}><Text style={[styles.personName, { color: theme.text }]}>{item.person.name}</Text>{item.favorite ? <Ionicons name="star" size={13} color={ACCENT} /> : null}</View><Text style={[styles.metaText, { color: theme.sub }]}>{item.last?.time || ''}</Text></View><Text numberOfLines={1} style={[styles.chatPreview, { color: item.unread ? theme.text : theme.sub, fontWeight: item.unread ? '700' : '400' }]}>{item.last ? `${item.last.senderId === activeId ? 'You: ' : ''}${item.last.type === 'text' ? item.last.text : item.last.type === 'photo' ? '📷 Photo' : '🎙 Voice message'}` : 'Start the conversation'}</Text></View>
             {item.unread ? <View style={styles.unreadCount}><Text style={styles.unreadCountText}>{item.unread}</Text></View> : null}
           </Pressable>
         )}
@@ -374,15 +400,44 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
     updateProfile({ ...draft, username: normalizeUsername(draft.username) }); setEditing(false);
   };
   const statuses = ['Available', 'Outside', 'At work', 'At event', 'Do not disturb'];
+  const applyProfilePhoto = (photoUri) => {
+    setDraft(prev => ({ ...prev, photoUri }));
+    if (!editing) updateProfile({ ...activeProfile, photoUri });
+  };
+  const pickProfilePhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) return Alert.alert('Photos permission', 'Allow photo access to choose a LINK profile photo.');
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.75 });
+      if (!result.canceled && result.assets?.[0]?.uri) applyProfilePhoto(result.assets[0].uri);
+    } catch { Alert.alert('Photo', 'Could not open your photo library.'); }
+  };
+  const takeProfilePhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) return Alert.alert('Camera permission', 'Allow camera access to take a LINK profile photo.');
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.75 });
+      if (!result.canceled && result.assets?.[0]?.uri) applyProfilePhoto(result.assets[0].uri);
+    } catch { Alert.alert('Camera', 'Could not open the camera.'); }
+  };
+  const currentPhoto = (editing ? draft : activeProfile).photoUri;
+  const photoMenu = () => Alert.alert('Profile photo', 'Choose what you want to do.', [
+    { text: 'Choose from Photos', onPress: pickProfilePhoto },
+    { text: 'Take photo', onPress: takeProfilePhoto },
+    ...(currentPhoto ? [{ text: 'Remove photo', style: 'destructive', onPress: () => applyProfilePhoto(null) }] : []),
+    { text: 'Cancel', style: 'cancel' },
+  ]);
 
   return (
     <ScrollView contentContainerStyle={styles.screenScroll} showsVerticalScrollIndicator={false}>
       <View style={styles.topHeader}><View><Text style={[styles.bigTitle, { color: theme.text }]}>Profile</Text><Text style={[styles.headerSub, { color: theme.sub }]}>Your public LINK identity</Text></View><IconButton icon={editing ? 'checkmark' : 'create-outline'} onPress={editing ? save : () => setEditing(true)} theme={theme} filled={editing} /></View>
-      <View style={[styles.profileCard, { backgroundColor: theme.card, borderColor: theme.border }]}><Avatar person={activeProfile} size={76} theme={theme} />
+      <View style={[styles.profileCard, { backgroundColor: theme.card, borderColor: theme.border }]}><Pressable onPress={photoMenu} style={styles.profilePhotoButton}><Avatar person={editing ? draft : activeProfile} size={82} theme={theme} /><View style={[styles.photoEditBadge, { backgroundColor: theme.inverse, borderColor: theme.card }]}><Ionicons name="camera" size={15} color={theme.inverseText} /></View></Pressable>
         {editing ? <View style={{ width: '100%', marginTop: 18, gap: 10 }}>
           <TextInput value={draft.name} onChangeText={name => setDraft({ ...draft, name })} placeholder="Display name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
           <TextInput value={draft.username} onChangeText={username => setDraft({ ...draft, username })} autoCapitalize="none" placeholder="@username" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
           <TextInput value={draft.bio} onChangeText={bio => setDraft({ ...draft, bio })} placeholder="Short bio" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
+          <TextInput value={draft.socials?.instagram || ''} onChangeText={instagram => setDraft({ ...draft, socials: { ...(draft.socials || {}), instagram } })} autoCapitalize="none" placeholder="Instagram @handle" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
+          <TextInput value={draft.socials?.spotify || ''} onChangeText={spotify => setDraft({ ...draft, socials: { ...(draft.socials || {}), spotify } })} placeholder="Spotify name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
         </View> : <><Text style={[styles.profileName, { color: theme.text }]}>{activeProfile.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{activeProfile.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{activeProfile.bio}</Text><Pill theme={theme} tone="accent">{activeProfile.status}</Pill></>}
       </View>
 
@@ -402,16 +457,21 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
         <SettingsRow theme={theme} icon="logo-instagram" title="Show socials" subtitle="Display social handles on your profile" right={<Switch value={privacy.showSocials} onValueChange={v => setPrivacy({ ...privacy, showSocials: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} />
         <SettingsRow theme={theme} icon="aperture-outline" title="Moments to LINKs" subtitle="Only linked people can see your Moments" right={<Switch value={privacy.momentsToLinks} onValueChange={v => setPrivacy({ ...privacy, momentsToLinks: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} last />
       </View>
-      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.2 demo</Text></Pressable>
+      <View style={[styles.gestureTip, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="return-up-back-outline" size={20} color={ACCENT} /><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Swipe to go back</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>On detail pages, swipe right from the left edge to go back. In chat, swipe a message right to reply.</Text></View></View>
+      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.3 demo</Text></Pressable>
     </ScrollView>
   );
 }
 
-function ChatMessage({ message, mine, theme, profiles, onLongPress, quoted }) {
+function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply, quoted }) {
   const sender = profiles[message.senderId];
   const reactions = message.reactions || [];
+  const replyGesture = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 8 && gesture.dx > 0 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
+    onPanResponderRelease: (_, gesture) => { if (gesture.dx > 54 && Math.abs(gesture.dy) < 70) onSwipeReply?.(); },
+  }), [onSwipeReply]);
   return (
-    <View style={[styles.messageLine, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
+    <View {...replyGesture.panHandlers} style={[styles.messageLine, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
       <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? { backgroundColor: ACCENT } : { backgroundColor: theme.card, borderColor: theme.border, borderWidth: StyleSheet.hairlineWidth }]}> 
         {quoted ? <View style={[styles.replyQuote, { borderLeftColor: mine ? 'rgba(255,255,255,.7)' : ACCENT }]}><Text numberOfLines={1} style={{ color: mine ? 'rgba(255,255,255,.78)' : theme.sub, fontSize: 11, fontWeight: '700' }}>{quoted.type === 'text' ? quoted.text : quoted.type === 'photo' ? '📷 Photo' : '🎙 Voice message'}</Text></View> : null}
         {message.type === 'photo' ? <View style={[styles.photoMessage, { backgroundColor: mine ? 'rgba(255,255,255,.15)' : theme.soft }]}>{message.uri ? <Image source={{ uri: message.uri }} style={styles.photoMessageImage} /> : <><Ionicons name="image-outline" size={28} color={mine ? '#fff' : theme.text} /><Text style={{ color: mine ? '#fff' : theme.text, fontWeight: '800', marginTop: 7 }}>Photo</Text></>}</View> : message.type === 'voice' ? <View style={styles.voiceMessage}><Ionicons name="play" size={18} color={mine ? '#fff' : theme.text} /><View style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: mine ? 'rgba(255,255,255,.45)' : theme.border }} /><Text style={{ color: mine ? '#fff' : theme.text, fontSize: 11, fontWeight: '700' }}>{message.duration || '0:08'}</Text></View> : <Text style={[styles.bubbleText, { color: mine ? '#fff' : theme.text }]}>{message.text}</Text>}
@@ -437,6 +497,15 @@ function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, 
     setTimeout(() => listRef.current?.scrollToEnd?.({ animated: true }), 50);
     if (!person.isLocal) { setTyping(true); setTimeout(() => setTyping(false), 1500); }
   };
+  const pickChatPhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) return Alert.alert('Photos permission', 'Allow photo access to send images in chat.');
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.72 });
+      if (!result.canceled && result.assets?.[0]?.uri) send({ type: 'photo', text: '', uri: result.assets[0].uri });
+    } catch { Alert.alert('Photo', 'Could not open your photo library.'); }
+  };
+
   const longPress = (m) => {
     const mine = m.senderId === activeProfile.id;
     const buttons = [
@@ -450,19 +519,21 @@ function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, 
   };
 
   return (
+    <EdgeSwipeBack onBack={onBack}>
     <KeyboardAvoidingView style={[styles.flexOne, { backgroundColor: theme.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.flexOne}>
         <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}><IconButton icon="chevron-back" onPress={onBack} theme={theme} /><Pressable onPress={() => onOpenProfile(person)} style={styles.chatHeaderPerson}><Avatar person={person} size={38} theme={theme} /><View><Text style={[styles.chatHeaderName, { color: theme.text }]}>{person.name}</Text><Text style={[styles.chatHeaderStatus, { color: theme.success }]}>{person.status || 'Linked'}</Text></View></Pressable><IconButton icon="videocam-outline" onPress={() => Alert.alert('LINK Call', 'Voice & video calling UI is reserved for a future backend build.')} theme={theme} /></View>
         <View style={[styles.metContext, { backgroundColor: theme.soft }]}><Ionicons name="link" size={14} color={theme.sub} /><Text style={[styles.metContextText, { color: theme.sub }]}>Mutual LINK · private conversation</Text></View>
         <FlatList ref={listRef} data={messages} keyExtractor={m => m.id} contentContainerStyle={styles.messageList} showsVerticalScrollIndicator={false} onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: false })}
-          renderItem={({ item }) => <ChatMessage message={item} mine={item.senderId === activeProfile.id} theme={theme} profiles={profiles} quoted={messages.find(x => x.id === item.replyTo)} onLongPress={() => longPress(item)} />}
+          renderItem={({ item }) => <ChatMessage message={item} mine={item.senderId === activeProfile.id} theme={theme} profiles={profiles} quoted={messages.find(x => x.id === item.replyTo)} onSwipeReply={() => setReplyTo(item)} onLongPress={() => longPress(item)} />}
           ListEmptyComponent={<View style={styles.emptyChat}><Ionicons name="sparkles-outline" size={30} color={ACCENT} /><Text style={[styles.emptyTitle, { color: theme.text }]}>New LINK</Text><Text style={[styles.emptyBody, { color: theme.sub }]}>Say hi to {person.name.split(' ')[0]}.</Text></View>}
         />
         {typing ? <View style={styles.typingLine}><View style={[styles.typingBubble, { backgroundColor: theme.card }]}><Text style={{ color: theme.sub, letterSpacing: 2 }}>•••</Text></View><Text style={{ color: theme.sub, fontSize: 10 }}>{person.name.split(' ')[0]} is typing</Text></View> : null}
         {replyTo ? <View style={[styles.replyComposerBar, { backgroundColor: theme.soft }]}><View style={{ flex: 1 }}><Text style={{ color: ACCENT, fontWeight: '800', fontSize: 11 }}>Replying to {replyTo.senderId === activeProfile.id ? 'yourself' : profiles[replyTo.senderId]?.name}</Text><Text numberOfLines={1} style={{ color: theme.sub, fontSize: 12 }}>{replyTo.type === 'text' ? replyTo.text : replyTo.type}</Text></View><Pressable onPress={() => setReplyTo(null)}><Ionicons name="close" size={19} color={theme.sub} /></Pressable></View> : null}
-        <View style={[styles.composerWrap, { borderTopColor: theme.border, backgroundColor: theme.bg }]}><Pressable style={[styles.plusButton, { backgroundColor: theme.soft }]} onPress={() => Alert.alert('Send', 'Choose a local demo attachment.', [{ text: 'Photo', onPress: () => send({ type: 'photo', text: '' }) }, { text: 'Voice message', onPress: () => send({ type: 'voice', text: '', duration: '0:08' }) }, { text: 'Cancel', style: 'cancel' }])}><Ionicons name="add" size={24} color={theme.text} /></Pressable><View style={[styles.composer, { backgroundColor: theme.input }]}><TextInput value={text} onChangeText={setText} placeholder={`Message ${person.name.split(' ')[0]}`} placeholderTextColor={theme.sub} style={[styles.composerInput, { color: theme.text }]} multiline maxLength={1000} /><Pressable onPress={() => send()} style={[styles.sendButton, { backgroundColor: text.trim() ? ACCENT : theme.soft }]}><Ionicons name="arrow-up" size={19} color={text.trim() ? '#fff' : theme.sub} /></Pressable></View></View>
+        <View style={[styles.composerWrap, { borderTopColor: theme.border, backgroundColor: theme.bg }]}><Pressable style={[styles.plusButton, { backgroundColor: theme.soft }]} onPress={() => Alert.alert('Send', 'Choose a local demo attachment.', [{ text: 'Photo', onPress: pickChatPhoto }, { text: 'Voice message', onPress: () => send({ type: 'voice', text: '', duration: '0:08' }) }, { text: 'Cancel', style: 'cancel' }])}><Ionicons name="add" size={24} color={theme.text} /></Pressable><View style={[styles.composer, { backgroundColor: theme.input }]}><TextInput value={text} onChangeText={setText} placeholder={`Message ${person.name.split(' ')[0]}`} placeholderTextColor={theme.sub} style={[styles.composerInput, { color: theme.text }]} multiline maxLength={1000} /><Pressable onPress={() => send()} style={[styles.sendButton, { backgroundColor: text.trim() ? ACCENT : theme.soft }]}><Ionicons name="arrow-up" size={19} color={text.trim() ? '#fff' : theme.sub} /></Pressable></View></View>
       </SafeAreaView>
     </KeyboardAvoidingView>
+    </EdgeSwipeBack>
   );
 }
 
@@ -471,7 +542,7 @@ function ScannerModal({ visible, onClose, onScanned }) {
   const [locked, setLocked] = useState(false);
   useEffect(() => { if (visible) setLocked(false); }, [visible]);
   useEffect(() => { if (visible && permission && !permission.granted && permission.canAskAgain) requestPermission(); }, [visible, permission]);
-  return <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}><View style={styles.scannerPage}><SafeAreaView style={styles.flexOne}><View style={styles.scannerHeader}><View><Text style={styles.scannerTitle}>Scan LINK</Text><Text style={styles.scannerSub}>Point your camera at their card.</Text></View><Pressable onPress={onClose} style={styles.scannerClose}><Ionicons name="close" size={24} color="#fff" /></Pressable></View><View style={styles.cameraShell}>{permission?.granted ? <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={locked ? undefined : ({ data }) => { setLocked(true); onScanned(data); }} /> : <View style={styles.permissionState}><Ionicons name="camera-outline" size={42} color="#fff" /><Text style={styles.permissionTitle}>Camera access needed</Text><Text style={styles.permissionBody}>LINK uses the camera only to scan QR cards and create Moments.</Text><Pressable onPress={requestPermission} style={styles.permissionButton}><Text style={{ color: '#111318', fontWeight: '800' }}>Allow camera</Text></Pressable></View>}<View pointerEvents="none" style={styles.scanFrame}><View style={[styles.corner, styles.cornerTL]} /><View style={[styles.corner, styles.cornerTR]} /><View style={[styles.corner, styles.cornerBL]} /><View style={[styles.corner, styles.cornerBR]} /></View></View><Text style={styles.scannerFoot}>Only LINK QR cards are accepted.</Text>{locked ? <Pressable onPress={() => setLocked(false)} style={styles.scanAgainButton}><Text style={{ color: '#fff', fontWeight: '700' }}>Scan again</Text></Pressable> : null}</SafeAreaView></View></Modal>;
+  return <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}><EdgeSwipeBack onBack={onClose}><View style={styles.scannerPage}><SafeAreaView style={styles.flexOne}><View style={styles.scannerHeader}><View><Text style={styles.scannerTitle}>Scan LINK</Text><Text style={styles.scannerSub}>Point your camera at their card.</Text></View><Pressable onPress={onClose} style={styles.scannerClose}><Ionicons name="close" size={24} color="#fff" /></Pressable></View><View style={styles.cameraShell}>{permission?.granted ? <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={locked ? undefined : ({ data }) => { setLocked(true); onScanned(data); }} /> : <View style={styles.permissionState}><Ionicons name="camera-outline" size={42} color="#fff" /><Text style={styles.permissionTitle}>Camera access needed</Text><Text style={styles.permissionBody}>LINK uses the camera only to scan QR cards and create Moments.</Text><Pressable onPress={requestPermission} style={styles.permissionButton}><Text style={{ color: '#111318', fontWeight: '800' }}>Allow camera</Text></Pressable></View>}<View pointerEvents="none" style={styles.scanFrame}><View style={[styles.corner, styles.cornerTL]} /><View style={[styles.corner, styles.cornerTR]} /><View style={[styles.corner, styles.cornerBL]} /><View style={[styles.corner, styles.cornerBR]} /></View></View><Text style={styles.scannerFoot}>Only LINK QR cards are accepted.</Text>{locked ? <Pressable onPress={() => setLocked(false)} style={styles.scanAgainButton}><Text style={{ color: '#fff', fontWeight: '700' }}>Scan again</Text></Pressable> : null}</SafeAreaView></View></EdgeSwipeBack></Modal>;
 }
 
 function OwnCardModal({ visible, onClose, theme, profile, payload }) {
@@ -480,7 +551,7 @@ function OwnCardModal({ visible, onClose, theme, profile, payload }) {
 
 function NotificationsModal({ visible, onClose, theme, items, markAllRead }) {
   useEffect(() => { if (visible) markAllRead(); }, [visible]);
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.sheetCard, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Notifications</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>LINK activity for this account</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View><ScrollView style={{ maxHeight: 430 }} contentContainerStyle={{ paddingTop: 14 }}>{items.length ? items.map(n => <View key={n.id} style={[styles.notificationRow, { borderBottomColor: theme.border }]}><View style={[styles.notificationIcon, { backgroundColor: theme.soft }]}><Ionicons name={n.type === 'message' ? 'chatbubble-outline' : n.type === 'request' ? 'link-outline' : 'checkmark-circle-outline'} size={18} color={theme.text} /></View><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>{n.title}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{n.body}</Text></View><Text style={[styles.metaText, { color: theme.sub }]}>{n.time}</Text></View>) : <View style={styles.emptyState}><Ionicons name="notifications-off-outline" size={34} color={theme.sub} /><Text style={[styles.emptyTitle, { color: theme.text }]}>All caught up</Text></View>}</ScrollView></Pressable></Pressable></Modal>;
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.sheetCard, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Notifications</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>LINK activity for this account</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View><ScrollView style={{ maxHeight: 430 }} contentContainerStyle={{ paddingTop: 14 }}>{items.length ? items.map(n => <View key={n.id} style={[styles.notificationRow, { borderBottomColor: theme.border }]}><View style={[styles.notificationIcon, { backgroundColor: theme.soft }]}><Ionicons name={n.type === 'message' ? 'chatbubble-outline' : n.type === 'request' ? 'link-outline' : n.type === 'wave' ? 'hand-left-outline' : 'checkmark-circle-outline'} size={18} color={theme.text} /></View><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>{n.title}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{n.body}</Text></View><Text style={[styles.metaText, { color: theme.sub }]}>{n.time}</Text></View>) : <View style={styles.emptyState}><Ionicons name="notifications-off-outline" size={34} color={theme.sub} /><Text style={[styles.emptyTitle, { color: theme.text }]}>All caught up</Text></View>}</ScrollView></Pressable></Pressable></Modal>;
 }
 
 function AccountSwitcherModal({ visible, onClose, theme, localProfiles, activeId, onSwitch, onCreate }) {
@@ -499,11 +570,11 @@ function CreateAccountModal({ visible, onClose, theme, onCreate, existingProfile
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={[styles.sheetCard, { backgroundColor: theme.card }]}><View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>New local account</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>Create another test identity</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View><View style={{ gap: 10, marginTop: 18 }}><TextInput value={name} onChangeText={setName} placeholder="Display name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" placeholder="@username" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /><TextInput value={bio} onChangeText={setBio} placeholder="Short bio" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /></View><Pressable onPress={submit} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Text style={{ color: theme.inverseText, fontWeight: '800' }}>Create & switch</Text></Pressable></View></View></Modal>;
 }
 
-function PersonProfileModal({ visible, onClose, theme, person, connected, privacy, onChat, onSendRequest }) {
+function PersonProfileModal({ visible, onClose, theme, person, connected, privacy, favorite = false, onToggleFavorite, onChat, onSendRequest, onWave }) {
   if (!person) return null;
   const showSocials = privacy?.showSocials !== false;
   const showStatus = privacy?.showStatus !== false;
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.profileModal, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><Pill theme={theme}>{person.isLocal ? 'LOCAL ACCOUNT' : 'LINK PROFILE'}</Pill><IconButton icon="close" onPress={onClose} theme={theme} /></View><Avatar person={person} size={84} theme={theme} /><Text style={[styles.profileName, { color: theme.text }]}>{person.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{person.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{person.bio}</Text>{showStatus ? <Pill theme={theme} tone="success">{person.status}</Pill> : null}{showSocials ? <View style={[styles.socialBox, { backgroundColor: theme.soft }]}><View style={styles.socialLine}><Ionicons name="logo-instagram" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.instagram || person.username}</Text></View><View style={styles.socialLine}><Ionicons name="musical-notes-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.spotify || person.name}</Text></View></View> : null}{connected ? <Pressable onPress={() => { onClose(); onChat(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble-ellipses" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Message</Text></Pressable> : <Pressable onPress={() => { onSendRequest?.(); onClose(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="link" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Send LINK request</Text></Pressable>}<Pressable onPress={() => Alert.alert('Safety', 'Block and report controls are prepared for server-backed moderation in a later build.')} style={[styles.safetyButton, { borderColor: theme.border }]}><Ionicons name="shield-outline" size={17} color={theme.sub} /><Text style={{ color: theme.sub, fontWeight: '700' }}>Safety options</Text></Pressable></Pressable></Pressable></Modal>;
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.profileModal, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><Pill theme={theme}>{person.isLocal ? 'LOCAL ACCOUNT' : 'LINK PROFILE'}</Pill><IconButton icon="close" onPress={onClose} theme={theme} /></View><Avatar person={person} size={84} theme={theme} /><Text style={[styles.profileName, { color: theme.text }]}>{person.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{person.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{person.bio}</Text>{showStatus ? <Pill theme={theme} tone="success">{person.status}</Pill> : null}{showSocials ? <View style={[styles.socialBox, { backgroundColor: theme.soft }]}><View style={styles.socialLine}><Ionicons name="logo-instagram" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.instagram || person.username}</Text></View><View style={styles.socialLine}><Ionicons name="musical-notes-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.spotify || person.name}</Text></View></View> : null}{connected ? <><View style={styles.profileActionRow}><Pressable onPress={() => { onClose(); onChat(); }} style={[styles.profilePrimaryAction, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble-ellipses" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Message</Text></Pressable><Pressable onPress={onToggleFavorite} style={[styles.profileSquareAction, { backgroundColor: favorite ? 'rgba(108,92,231,.14)' : theme.soft }]}><Ionicons name={favorite ? 'star' : 'star-outline'} size={21} color={favorite ? ACCENT : theme.text} /></Pressable></View><Pressable onPress={onWave} style={[styles.waveButton, { backgroundColor: theme.soft }]}><Ionicons name="hand-left-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '800' }}>Send a wave</Text></Pressable></> : <Pressable onPress={() => { onSendRequest?.(); onClose(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="link" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Send LINK request</Text></Pressable>}<Pressable onPress={() => Alert.alert('Safety', 'Block and report controls are prepared for server-backed moderation in a later build.')} style={[styles.safetyButton, { borderColor: theme.border }]}><Ionicons name="shield-outline" size={17} color={theme.sub} /><Text style={{ color: theme.sub, fontWeight: '700' }}>Safety options</Text></Pressable></Pressable></Pressable></Modal>;
 }
 
 function MomentComposerModal({ visible, onClose, theme, activeProfile, onPost }) {
@@ -514,12 +585,12 @@ function MomentComposerModal({ visible, onClose, theme, activeProfile, onPost })
   useEffect(() => { if (visible) { setCaptured(null); setCaption(''); if (permission && !permission.granted && permission.canAskAgain) requestPermission(); } }, [visible]);
   const snap = async () => { try { const photo = await cameraRef.current?.takePictureAsync?.({ quality: .55 }); if (photo?.uri) setCaptured(photo.uri); } catch { Alert.alert('Camera', 'Could not capture a photo. You can post a quick Moment instead.'); } };
   const post = () => { onPost({ imageUri: captured, caption: caption.trim() || (captured ? 'new moment' : 'quick moment ✨'), emoji: captured ? null : '✨' }); onClose(); };
-  return <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}><View style={[styles.momentComposerPage, { backgroundColor: '#08090C' }]}><SafeAreaView style={styles.flexOne}><View style={styles.scannerHeader}><View><Text style={styles.scannerTitle}>New Moment</Text><Text style={styles.scannerSub}>Visible to your LINKs for 24 hours.</Text></View><Pressable onPress={onClose} style={styles.scannerClose}><Ionicons name="close" size={24} color="#fff" /></Pressable></View><View style={styles.momentCameraShell}>{captured ? <Image source={{ uri: captured }} style={StyleSheet.absoluteFill} /> : permission?.granted ? <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" /> : <View style={styles.permissionState}><Ionicons name="camera-outline" size={42} color="#fff" /><Text style={styles.permissionTitle}>Camera access</Text><Pressable onPress={requestPermission} style={styles.permissionButton}><Text style={{ color: '#111318', fontWeight: '800' }}>Allow camera</Text></Pressable></View>}</View><View style={styles.momentComposerBottom}><TextInput value={caption} onChangeText={setCaption} placeholder="Add a caption…" placeholderTextColor="rgba(255,255,255,.45)" style={styles.momentCaptionInput} />{captured ? <Pressable onPress={() => setCaptured(null)} style={styles.momentSecondary}><Ionicons name="refresh" size={20} color="#fff" /></Pressable> : <Pressable onPress={snap} style={styles.shutter}><View style={styles.shutterInner} /></Pressable>}<Pressable onPress={post} style={styles.momentPost}><Ionicons name="arrow-up" size={22} color="#111318" /></Pressable></View></SafeAreaView></View></Modal>;
+  return <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}><EdgeSwipeBack onBack={onClose}><View style={[styles.momentComposerPage, { backgroundColor: '#08090C' }]}><SafeAreaView style={styles.flexOne}><View style={styles.scannerHeader}><View><Text style={styles.scannerTitle}>New Moment</Text><Text style={styles.scannerSub}>Visible to your LINKs for 24 hours.</Text></View><Pressable onPress={onClose} style={styles.scannerClose}><Ionicons name="close" size={24} color="#fff" /></Pressable></View><View style={styles.momentCameraShell}>{captured ? <Image source={{ uri: captured }} style={StyleSheet.absoluteFill} /> : permission?.granted ? <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" /> : <View style={styles.permissionState}><Ionicons name="camera-outline" size={42} color="#fff" /><Text style={styles.permissionTitle}>Camera access</Text><Pressable onPress={requestPermission} style={styles.permissionButton}><Text style={{ color: '#111318', fontWeight: '800' }}>Allow camera</Text></Pressable></View>}</View><View style={styles.momentComposerBottom}><TextInput value={caption} onChangeText={setCaption} placeholder="Add a caption…" placeholderTextColor="rgba(255,255,255,.45)" style={styles.momentCaptionInput} />{captured ? <Pressable onPress={() => setCaptured(null)} style={styles.momentSecondary}><Ionicons name="refresh" size={20} color="#fff" /></Pressable> : <Pressable onPress={snap} style={styles.shutter}><View style={styles.shutterInner} /></Pressable>}<Pressable onPress={post} style={styles.momentPost}><Ionicons name="arrow-up" size={22} color="#111318" /></Pressable></View></SafeAreaView></View></EdgeSwipeBack></Modal>;
 }
 
 function MomentViewerModal({ visible, onClose, theme, moment, owner }) {
   if (!moment || !owner) return null;
-  return <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}><View style={styles.momentViewer}><SafeAreaView style={styles.flexOne}><View style={styles.momentViewerHeader}><View style={styles.chatHeaderPerson}><Avatar person={owner} size={38} theme={dark} /><View><Text style={{ color: '#fff', fontWeight: '800' }}>{owner.name}</Text><Text style={{ color: 'rgba(255,255,255,.55)', fontSize: 10 }}>Moment · today</Text></View></View><Pressable onPress={onClose} style={styles.scannerClose}><Ionicons name="close" size={24} color="#fff" /></Pressable></View><View style={styles.momentViewerContent}>{moment.imageUri ? <Image source={{ uri: moment.imageUri }} style={styles.momentViewerImage} resizeMode="cover" /> : <><Text style={styles.momentEmoji}>{moment.emoji || '✨'}</Text><Text style={styles.momentBigCaption}>{moment.caption}</Text></>}</View>{moment.imageUri ? <View style={styles.momentCaptionOverlay}><Text style={{ color: '#fff', fontSize: 18, fontWeight: '800', textAlign: 'center' }}>{moment.caption}</Text></View> : null}</SafeAreaView></View></Modal>;
+  return <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}><EdgeSwipeBack onBack={onClose}><View style={styles.momentViewer}><SafeAreaView style={styles.flexOne}><View style={styles.momentViewerHeader}><View style={styles.chatHeaderPerson}><Avatar person={owner} size={38} theme={dark} /><View><Text style={{ color: '#fff', fontWeight: '800' }}>{owner.name}</Text><Text style={{ color: 'rgba(255,255,255,.55)', fontSize: 10 }}>Moment · today</Text></View></View><Pressable onPress={onClose} style={styles.scannerClose}><Ionicons name="close" size={24} color="#fff" /></Pressable></View><View style={styles.momentViewerContent}>{moment.imageUri ? <Image source={{ uri: moment.imageUri }} style={styles.momentViewerImage} resizeMode="cover" /> : <><Text style={styles.momentEmoji}>{moment.emoji || '✨'}</Text><Text style={styles.momentBigCaption}>{moment.caption}</Text></>}</View>{moment.imageUri ? <View style={styles.momentCaptionOverlay}><Text style={{ color: '#fff', fontSize: 18, fontWeight: '800', textAlign: 'center' }}>{moment.caption}</Text></View> : null}</SafeAreaView></View></EdgeSwipeBack></Modal>;
 }
 
 function TabBar({ tab, setTab, theme }) {
@@ -550,6 +621,7 @@ export default function App() {
   const connectedProfiles = connectedIds.map(id => data.profiles[id]).filter(Boolean);
   const incomingRequests = data.requests.filter(r => r.toId === data.activeAccountId);
   const privacy = data.privacy[data.activeAccountId] || { showStatus: true, showSocials: true, momentsToLinks: true };
+  const favoriteIds = data.favorites?.[data.activeAccountId] || [];
   const activeChatPerson = activeChatId ? data.profiles[activeChatId] : null;
   const activeMessages = activeChatId ? data.conversations[threadKey(data.activeAccountId, activeChatId)] || [] : [];
   const profileModalPerson = profileModalId ? data.profiles[profileModalId] : null;
@@ -566,7 +638,15 @@ export default function App() {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const saved = JSON.parse(raw);
-          if (saved?.version === 2 && saved?.profiles && saved?.activeAccountId) setData(saved);
+          if (saved?.profiles && saved?.activeAccountId) {
+            const base = initialData();
+            setData({
+              ...base, ...saved, version: 3,
+              privacy: { ...base.privacy, ...(saved.privacy || {}) },
+              notifications: { ...base.notifications, ...(saved.notifications || {}) },
+              favorites: { ...base.favorites, ...(saved.favorites || {}) },
+            });
+          }
         }
       } catch (e) { console.warn('LINK storage load failed', e); }
       finally { setHydrated(true); }
@@ -595,6 +675,7 @@ export default function App() {
       profiles: { ...prev.profiles, [id]: newProfile },
       relationships: { ...prev.relationships, [id]: [] },
       notifications: { ...prev.notifications, [id]: [] },
+      favorites: { ...(prev.favorites || {}), [id]: [] },
       privacy: { ...prev.privacy, [id]: { showStatus: true, showSocials: true, momentsToLinks: true } },
     }));
     setCreateAccountOpen(false); setAccountsOpen(false); setTab('home');
@@ -678,20 +759,34 @@ export default function App() {
   };
   const markNotificationsRead = () => mutate(prev => ({ ...prev, notifications: { ...prev.notifications, [prev.activeAccountId]: (prev.notifications[prev.activeAccountId] || []).map(n => ({ ...n, read: true })) } }));
 
-  const resetDemo = () => Alert.alert('Reset LINK 0.2?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
+  const toggleFavorite = (personId) => mutate(prev => {
+    const mine = prev.favorites?.[prev.activeAccountId] || [];
+    const nextMine = mine.includes(personId) ? mine.filter(id => id !== personId) : [personId, ...mine];
+    return { ...prev, favorites: { ...(prev.favorites || {}), [prev.activeAccountId]: nextMine } };
+  });
+
+  const sendWave = (personId) => {
+    const person = data.profiles[personId];
+    if (!person) return;
+    if (!person.isLocal) return Alert.alert('Wave sent 👋', `${person.name} will see your wave when LINK has a live backend.`);
+    mutate(prev => notify({ ...prev }, personId, { type: 'wave', title: '👋 New wave', body: `${prev.profiles[prev.activeAccountId].name} waved at you.` }));
+    Alert.alert('Wave sent 👋', `Switch to ${person.name} to see it.`);
+  };
+
+  const resetDemo = () => Alert.alert('Reset LINK 0.3?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
 
   if (!hydrated || !activeProfile) return <View style={[styles.loading, { backgroundColor: light.bg }]}><View style={styles.loadingLogo}><Text style={styles.loadingLogoText}>L*</Text></View><Text style={{ fontWeight: '900', color: light.text, fontSize: 17 }}>LINK</Text><Text style={{ color: light.sub, fontSize: 12 }}>{BUILD}</Text></View>;
 
-  if (activeChatPerson) return <><RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} /><ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatPerson} messages={activeMessages} profiles={data.profiles} onBack={() => setActiveChatId(null)} onSend={sendMessage} onReact={reactMessage} onDelete={deleteMessage} onOpenProfile={p => setProfileModalId(p.id)} markRead={markRead} /><PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} onChat={() => profileModalPerson && openChat(profileModalPerson)} /></>;
+  if (activeChatPerson) return <><RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} /><ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatPerson} messages={activeMessages} profiles={data.profiles} onBack={() => setActiveChatId(null)} onSend={sendMessage} onReact={reactMessage} onDelete={deleteMessage} onOpenProfile={p => setProfileModalId(p.id)} markRead={markRead} /><PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} /></>;
 
   return (
     <View style={[styles.app, { backgroundColor: theme.bg }]}>
       <RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
       <SafeAreaView style={styles.safe}><View style={styles.content}>
-        {tab === 'home' && <HomeScreen theme={theme} activeProfile={activeProfile} connectedProfiles={connectedProfiles} conversations={data.conversations} activeId={data.activeAccountId} requests={incomingRequests} notifications={data.notifications} moments={data.moments} profiles={data.profiles} openOwnCard={() => setCardOpen(true)} openScanner={() => setScannerOpen(true)} openChat={openChat} openAccountSwitcher={() => setAccountsOpen(true)} openNotifications={() => setNotificationsOpen(true)} onAccept={acceptRequest} onDecline={declineRequest} onCreateMoment={() => setMomentComposerOpen(true)} onOpenMoment={m => setMomentViewId(m.id)} setTab={setTab} />}
-        {tab === 'people' && <PeopleScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} localAccountIds={data.localAccountIds} requests={data.requests} openProfile={p => setProfileModalId(p.id)} openChat={openChat} sendRequest={sendRequest} />}
+        {tab === 'home' && <HomeScreen theme={theme} activeProfile={activeProfile} connectedProfiles={connectedProfiles} conversations={data.conversations} activeId={data.activeAccountId} requests={incomingRequests} notifications={data.notifications} moments={data.moments} profiles={data.profiles} favoriteIds={favoriteIds} openOwnCard={() => setCardOpen(true)} openScanner={() => setScannerOpen(true)} openChat={openChat} openAccountSwitcher={() => setAccountsOpen(true)} openNotifications={() => setNotificationsOpen(true)} onAccept={acceptRequest} onDecline={declineRequest} onCreateMoment={() => setMomentComposerOpen(true)} onOpenMoment={m => setMomentViewId(m.id)} setTab={setTab} />}
+        {tab === 'people' && <PeopleScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} localAccountIds={data.localAccountIds} requests={data.requests} favoriteIds={favoriteIds} openProfile={p => setProfileModalId(p.id)} openChat={openChat} sendRequest={sendRequest} />}
         {tab === 'link' && <LinkScreen theme={theme} activeProfile={activeProfile} payload={payload} localProfiles={localProfiles} relationships={data.relationships} requests={data.requests} openScanner={() => setScannerOpen(true)} openOwnCard={() => setCardOpen(true)} sendRequest={sendRequest} />}
-        {tab === 'chats' && <ChatsScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} conversations={data.conversations} openChat={openChat} />}
+        {tab === 'chats' && <ChatsScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} conversations={data.conversations} favoriteIds={favoriteIds} openChat={openChat} />}
         {tab === 'profile' && <ProfileScreen theme={theme} activeProfile={activeProfile} updateProfile={updateActiveProfile} themeSetting={data.themeSetting} setThemeSetting={setThemeSetting} privacy={privacy} setPrivacy={setPrivacy} openAccountSwitcher={() => setAccountsOpen(true)} resetDemo={resetDemo} />}
       </View><TabBar tab={tab} setTab={setTab} theme={theme} /></SafeAreaView>
 
@@ -700,7 +795,7 @@ export default function App() {
       <NotificationsModal visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} theme={theme} items={data.notifications[data.activeAccountId] || []} markAllRead={markNotificationsRead} />
       <AccountSwitcherModal visible={accountsOpen} onClose={() => setAccountsOpen(false)} theme={theme} localProfiles={localProfiles} activeId={data.activeAccountId} onSwitch={switchAccount} onCreate={() => { setAccountsOpen(false); setCreateAccountOpen(true); }} />
       <CreateAccountModal visible={createAccountOpen} onClose={() => setCreateAccountOpen(false)} theme={theme} onCreate={createLocalAccount} existingProfiles={data.profiles} />
-      <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} onChat={() => profileModalPerson && openChat(profileModalPerson)} onSendRequest={() => profileModalId && sendRequest(profileModalId)} />
+      <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} onSendRequest={() => profileModalId && sendRequest(profileModalId)} />
       <MomentComposerModal visible={momentComposerOpen} onClose={() => setMomentComposerOpen(false)} theme={theme} activeProfile={activeProfile} onPost={postMoment} />
       <MomentViewerModal visible={!!momentViewId} onClose={() => setMomentViewId(null)} theme={theme} moment={momentView} owner={momentView ? data.profiles[momentView.ownerId] : null} />
     </View>
@@ -708,9 +803,9 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  flexOne: { flex: 1 }, app: { flex: 1 }, safe: { flex: 1 }, content: { flex: 1 },
+  flexOne: { flex: 1 }, edgeSwipePage: { flex: 1 }, app: { flex: 1 }, safe: { flex: 1 }, content: { flex: 1 },
   screenScroll: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 120 },
-  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 },
+  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }, inlineNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: 0 },
   simpleHeader: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 14 },
   bigTitle: { fontSize: 32, fontWeight: '900', letterSpacing: -1.2 }, headerSub: { fontSize: 13.5, marginTop: 4 },
   eyebrow: { fontSize: 10.5, fontWeight: '900', letterSpacing: 1.1 },
@@ -739,6 +834,9 @@ const styles = StyleSheet.create({
   labHint: { width: '100%', fontSize: 12, lineHeight: 17, marginBottom: 10 }, labAccountRow: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }, smallAction: { minHeight: 34, borderRadius: 11, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
   chatRow: { flexDirection: 'row', gap: 12, paddingVertical: 13, alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth }, chatPreview: { fontSize: 13.5, marginTop: 4 },
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingTop: 70, paddingHorizontal: 34 }, emptyTitle: { fontSize: 18, fontWeight: '900', marginTop: 14 }, emptyBody: { fontSize: 13.5, lineHeight: 20, textAlign: 'center', marginTop: 6 },
+  profilePhotoButton: { position: 'relative', alignSelf: 'center' }, photoEditBadge: { position: 'absolute', right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
+  gestureTip: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 22 },
+  profileActionRow: { width: '100%', flexDirection: 'row', gap: 9, marginTop: 18 }, profilePrimaryAction: { flex: 1, minHeight: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }, profileSquareAction: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, waveButton: { width: '100%', minHeight: 46, borderRadius: 15, marginTop: 9, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   profileCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 28, padding: 22, alignItems: 'center', marginBottom: 12 }, profileName: { fontSize: 24, fontWeight: '900', marginTop: 14, letterSpacing: -.7 }, profileUser: { fontSize: 14, marginTop: 3 }, profileBio: { fontSize: 13.5, marginTop: 10, marginBottom: 12, textAlign: 'center' }, profileInput: { width: '100%', minHeight: 46, borderRadius: 14, paddingHorizontal: 14, fontSize: 15 },
   statusRow: { gap: 8, paddingBottom: 4 }, statusChoice: { paddingHorizontal: 13, paddingVertical: 10, borderRadius: 14 },
   accountManagerButton: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11 },

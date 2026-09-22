@@ -2,13 +2,14 @@
   "expo": {
     "name": "LINK",
     "slug": "link-social-mvp",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "LINK uses the camera to scan LINK QR cards and create Moments."
+        "NSCameraUsageDescription": "LINK uses the camera to scan LINK QR cards and create Moments.",
+        "NSPhotoLibraryUsageDescription": "LINK uses your photo library to choose a profile photo and send images in chat."
       }
     },
     "android": {
@@ -22,6 +23,13 @@
         {
           "cameraPermission": "Allow LINK to use your camera to scan LINK QR cards and create Moments.",
           "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow LINK to access your photos for profile pictures, Moments and chat images.",
+          "cameraPermission": "Allow LINK to use your camera for Moments."
         }
       ]
     ],
