@@ -1,6 +1,6 @@
 {
   "name": "link-social-core",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "main": "index.js",
   "scripts": {
@@ -24,6 +24,7 @@
     "react-native-qrcode-svg": "^6.3.25",
     "react-native-svg": "15.15.4",
     "react-native-web": "~0.21.0",
-    "expo-image-picker": "~57.0.19"
+    "expo-image-picker": "~57.0.19",
+    "expo-blur": "~57.0.3"
   }
 }

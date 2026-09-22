@@ -22,18 +22,38 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
-const BUILD = 'LINK 0.3';
+const BUILD = 'LINK 0.4';
 
 const light = {
   bg: '#F6F7FB', card: '#FFFFFF', elevated: '#FFFFFF', text: '#111318', sub: '#6F7582',
   border: '#E8EAF0', soft: '#F0F1F6', input: '#F2F3F7', tab: 'rgba(255,255,255,0.97)',
   inverse: '#111318', inverseText: '#FFFFFF', danger: '#E5484D', success: '#1F9D66', warning: '#F59E0B',
 };
+
+const STATUS_PRESETS = [
+  { label: 'Available', icon: 'checkmark-circle', color: '#34C759' },
+  { label: 'Outside', icon: 'walk', color: '#0A84FF' },
+  { label: 'At work', icon: 'briefcase', color: '#FF9F0A' },
+  { label: 'At event', icon: 'musical-notes', color: '#AF52DE' },
+  { label: 'Do not disturb', icon: 'moon', color: '#FF453A' },
+];
+const STATUS_COLORS = ['#34C759', '#0A84FF', '#AF52DE', '#FF9F0A', '#FF453A', '#FF2D55', '#30B0C7', '#8E8E93'];
+const STATUS_ICONS = ['sparkles', 'heart', 'headset', 'game-controller', 'cafe', 'airplane', 'school', 'fitness', 'moon', 'flame'];
+const getStatusMeta = (person = {}) => {
+  const preset = STATUS_PRESETS.find(x => x.label === person.status);
+  return {
+    label: person.status || 'Available',
+    icon: person.statusIcon || preset?.icon || 'sparkles',
+    color: person.statusColor || preset?.color || ACCENT,
+  };
+};
+
 const dark = {
   bg: '#0B0C0F', card: '#13151A', elevated: '#181A20', text: '#F6F7FA', sub: '#9EA3AF',
   border: '#252832', soft: '#1A1D23', input: '#1B1E25', tab: 'rgba(16,17,21,0.97)',
@@ -53,19 +73,19 @@ function initialData() {
   const profiles = {
     local_simi: {
       id: 'local_simi', isLocal: true, name: 'Šimi', username: '@simi', bio: 'music • nights • LINK',
-      status: 'Outside', socials: { instagram: '@simi', spotify: 'Šimi' },
+      status: 'Outside', statusIcon: 'walk', statusColor: '#0A84FF', socials: { instagram: '@simi', spotify: 'Šimi' },
     },
     local_nela: {
       id: 'local_nela', isLocal: true, name: 'Nela K.', username: '@nelak', bio: 'music • prague • late nights',
-      status: 'Available', socials: { instagram: '@nelak', spotify: 'nela k' },
+      status: 'Available', statusIcon: 'checkmark-circle', statusColor: '#34C759', socials: { instagram: '@nelak', spotify: 'nela k' },
     },
     local_alex: {
       id: 'local_alex', isLocal: true, name: 'Alex V.', username: '@alexv', bio: 'design / streetwear / coffee',
-      status: 'At work', socials: { instagram: '@alexv', spotify: 'alex v' },
+      status: 'At work', statusIcon: 'briefcase', statusColor: '#FF9F0A', socials: { instagram: '@alexv', spotify: 'alex v' },
     },
     demo_david: {
       id: 'demo_david', isLocal: false, name: 'David M.', username: '@davidm', bio: 'design / streetwear',
-      status: '2m ago', socials: { instagram: '@davidm', spotify: 'David M' },
+      status: 'Night mode', statusIcon: 'moon', statusColor: '#AF52DE', socials: { instagram: '@davidm', spotify: 'David M' },
     },
   };
 
@@ -73,7 +93,7 @@ function initialData() {
   const keySD = threadKey('local_simi', 'demo_david');
 
   return {
-    version: 3,
+    version: 4,
     themeSetting: 'light',
     activeAccountId: 'local_simi',
     localAccountIds: ['local_simi', 'local_nela', 'local_alex'],
@@ -99,6 +119,10 @@ function initialData() {
     moments: [
       { id: 'mom_nela', ownerId: 'local_nela', emoji: '🎧', caption: 'late night playlist', createdAt: Date.now() - 1000 * 60 * 25 },
       { id: 'mom_david', ownerId: 'demo_david', emoji: '🧢', caption: 'new pieces soon', createdAt: Date.now() - 1000 * 60 * 72 },
+    ],
+    notes: [
+      { id: 'note_nela', ownerId: 'local_nela', text: 'who’s outside later?', emoji: '🌙', audience: 'links', createdAt: Date.now() - 1000 * 60 * 18, expiresAt: Date.now() + 1000 * 60 * 60 * 22 },
+      { id: 'note_david', ownerId: 'demo_david', text: 'new drop looking crazy', emoji: '🧢', audience: 'links', createdAt: Date.now() - 1000 * 60 * 52, expiresAt: Date.now() + 1000 * 60 * 60 * 20 },
     ],
     notifications: {
       local_simi: [
@@ -163,6 +187,11 @@ function Pill({ children, theme, tone = 'soft' }) {
   return <View style={[styles.pill, { backgroundColor: bg }]}><Text style={[styles.pillText, { color }]}>{children}</Text></View>;
 }
 
+function StatusBadge({ person, theme, compact = false }) {
+  const meta = getStatusMeta(person);
+  return <View style={[styles.statusBadge, compact && styles.statusBadgeCompact, { backgroundColor: `${meta.color}18`, borderColor: `${meta.color}3D` }]}><Ionicons name={meta.icon} size={compact ? 11 : 13} color={meta.color} /><Text numberOfLines={1} style={[styles.statusBadgeText, compact && { fontSize: 10.5 }, { color: meta.color }]}>{meta.label}</Text></View>;
+}
+
 function SectionTitle({ children, theme, action, onAction }) {
   return (
     <View style={styles.sectionTitleRow}>
@@ -215,6 +244,34 @@ function MomentStrip({ theme, activeProfile, moments, profiles, visibleOwnerIds,
   );
 }
 
+
+function NotesStrip({ theme, activeProfile, connectedProfiles, notes, favorites, onOwnNote, onOpenNote }) {
+  const now = Date.now();
+  const current = notes.filter(n => (n.expiresAt || (n.createdAt + 24 * 60 * 60 * 1000)) > now);
+  const own = current.find(n => n.ownerId === activeProfile.id);
+  const visible = connectedProfiles.map(person => {
+    const note = current.find(n => n.ownerId === person.id);
+    if (!note) return null;
+    if (note.audience === 'close' && !(favorites?.[person.id] || []).includes(activeProfile.id)) return null;
+    return { person, note };
+  }).filter(Boolean);
+
+  return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesStrip}>
+    <Pressable onPress={() => onOwnNote(own)} style={styles.notePerson}>
+      <View style={[styles.noteBubble, { backgroundColor: theme.card, borderColor: own ? ACCENT : theme.border }]}>
+        <Text numberOfLines={2} style={[styles.noteBubbleText, { color: own ? theme.text : theme.sub }]}>{own ? `${own.emoji || '💭'} ${own.text}` : 'Leave a note'}</Text>
+      </View>
+      <View style={styles.noteAvatarWrap}><Avatar person={activeProfile} size={48} theme={theme} /><View style={[styles.notePlus, { backgroundColor: theme.inverse, borderColor: theme.bg }]}><Ionicons name={own ? 'pencil' : 'add'} size={11} color={theme.inverseText} /></View></View>
+      <Text numberOfLines={1} style={[styles.noteName, { color: theme.sub }]}>You</Text>
+    </Pressable>
+    {visible.map(({ person, note }) => <Pressable key={note.id} onPress={() => onOpenNote(note, person)} style={styles.notePerson}>
+      <View style={[styles.noteBubble, { backgroundColor: theme.card, borderColor: theme.border }]}><Text numberOfLines={2} style={[styles.noteBubbleText, { color: theme.text }]}>{note.emoji ? `${note.emoji} ` : ''}{note.text}</Text>{note.audience === 'close' ? <Ionicons name="star" size={9} color={ACCENT} style={styles.noteCloseIcon} /> : null}</View>
+      <Avatar person={person} size={48} theme={theme} />
+      <Text numberOfLines={1} style={[styles.noteName, { color: theme.sub }]}>{person.name.split(' ')[0]}</Text>
+    </Pressable>)}
+  </ScrollView>;
+}
+
 function RequestCard({ request, profile, theme, onAccept, onDecline }) {
   return (
     <View style={[styles.requestCard, { backgroundColor: theme.card, borderColor: theme.border }]}> 
@@ -240,7 +297,7 @@ function PersonRow({ person, theme, onPress, onChat, unread = 0, favorite = fals
           <View style={styles.inlineNameRow}><Text numberOfLines={1} style={[styles.personName, { color: theme.text }]}>{person.name}</Text>{favorite ? <Ionicons name="star" size={13} color={ACCENT} /> : null}</View>
           {person.isLocal ? <Pill theme={theme}>LOCAL</Pill> : null}
         </View>
-        <Text numberOfLines={1} style={[styles.personSub, { color: theme.sub }]}>{person.username} · {person.status || 'Linked'}</Text>
+        <View style={styles.personSubLine}><Text numberOfLines={1} style={[styles.personSub, { color: theme.sub, marginTop: 0 }]}>{person.username}</Text><StatusBadge person={person} theme={theme} compact /></View>
       </View>
       <Pressable onPress={(e) => { e?.stopPropagation?.(); onChat?.(); }} style={[styles.miniChatButton, { backgroundColor: theme.soft }]}> 
         <Ionicons name="chatbubble-ellipses" size={18} color={theme.text} />
@@ -249,7 +306,7 @@ function PersonRow({ person, theme, onPress, onChat, unread = 0, favorite = fals
   );
 }
 
-function HomeScreen({ theme, activeProfile, connectedProfiles, conversations, activeId, requests, notifications, moments, profiles, favoriteIds, openOwnCard, openScanner, openChat, openAccountSwitcher, openNotifications, onAccept, onDecline, onCreateMoment, onOpenMoment, setTab }) {
+function HomeScreen({ theme, activeProfile, connectedProfiles, conversations, activeId, requests, notifications, moments, notes, profiles, favorites, favoriteIds, openOwnCard, openScanner, openChat, openAccountSwitcher, openNotifications, onAccept, onDecline, onCreateMoment, onOpenMoment, onOwnNote, onOpenNote, setTab }) {
   const unreadNotifs = (notifications[activeId] || []).filter(n => !n.read).length;
   const visibleMomentOwners = [activeId, ...connectedProfiles.map(p => p.id)];
   const unreadFor = (personId) => (conversations[threadKey(activeId, personId)] || []).filter(m => !m.readBy?.includes(activeId) && m.senderId !== activeId).length;
@@ -270,6 +327,9 @@ function HomeScreen({ theme, activeProfile, connectedProfiles, conversations, ac
           <Pressable onPress={openScanner} style={[styles.secondaryButton, { backgroundColor: theme.soft }]}><Ionicons name="scan" size={20} color={theme.text} /></Pressable>
         </View>
       </View>
+
+      <SectionTitle theme={theme} action="Add note" onAction={() => onOwnNote(notes.find(n => n.ownerId === activeId && (n.expiresAt || 0) > Date.now()))}>Notes</SectionTitle>
+      <NotesStrip theme={theme} activeProfile={activeProfile} connectedProfiles={connectedProfiles} notes={notes} favorites={favorites} onOwnNote={onOwnNote} onOpenNote={onOpenNote} />
 
       <SectionTitle theme={theme}>Moments</SectionTitle>
       <MomentStrip theme={theme} activeProfile={activeProfile} moments={moments} profiles={profiles} visibleOwnerIds={visibleMomentOwners} onCreate={onCreateMoment} onOpen={onOpenMoment} />
@@ -318,7 +378,7 @@ function PeopleScreen({ theme, activeId, profiles, connectedIds, localAccountIds
         {discover.filter(match).map(person => (
           <Pressable key={person.id} onPress={() => openProfile(person)} style={[styles.discoverRow, { backgroundColor: theme.card, borderColor: theme.border }]}> 
             <Avatar person={person} size={48} theme={theme} />
-            <View style={{ flex: 1 }}><Text style={[styles.personName, { color: theme.text }]}>{person.name}</Text><Text style={[styles.personSub, { color: theme.sub }]}>{person.username} · {person.status}</Text></View>
+            <View style={{ flex: 1 }}><Text style={[styles.personName, { color: theme.text }]}>{person.name}</Text><View style={styles.personSubLine}><Text style={[styles.personSub, { color: theme.sub, marginTop: 0 }]}>{person.username}</Text><StatusBadge person={person} theme={theme} compact /></View></View>
             <Pressable disabled={pendingTo(person.id) || pendingFrom(person.id)} onPress={() => sendRequest(person.id)} style={[styles.linkRequestButton, { backgroundColor: pendingTo(person.id) || pendingFrom(person.id) ? theme.soft : theme.inverse }]}><Text style={{ color: pendingTo(person.id) || pendingFrom(person.id) ? theme.sub : theme.inverseText, fontWeight: '800', fontSize: 12 }}>{pendingFrom(person.id) ? 'Incoming' : pendingTo(person.id) ? 'Sent' : 'LINK'}</Text></Pressable>
           </Pressable>
         ))}
@@ -338,7 +398,7 @@ function LinkScreen({ theme, activeProfile, payload, localProfiles, relationship
       <Pressable onPress={openOwnCard} style={[styles.linkCard, { backgroundColor: theme.card, borderColor: theme.border }]}> 
         <View style={styles.linkCardTop}><View><Text style={[styles.linkBrand, { color: theme.text }]}>LINK*</Text><Text style={[styles.cardHint, { color: theme.sub }]}>tap · scan · connect</Text></View><Avatar person={activeProfile} size={54} theme={theme} /></View>
         <View style={[styles.qrWrap, { backgroundColor: '#fff' }]}><QRCode value={payload} size={170} color="#0E0F12" backgroundColor="#FFFFFF" /></View>
-        <Text style={[styles.linkName, { color: theme.text }]}>{activeProfile.name}</Text><Text style={[styles.linkUsername, { color: theme.sub }]}>{activeProfile.username}</Text>
+        <Text style={[styles.linkName, { color: theme.text }]}>{activeProfile.name}</Text><Text style={[styles.linkUsername, { color: theme.sub }]}>{activeProfile.username}</Text><View style={{ marginTop: 10 }}><StatusBadge person={activeProfile} theme={theme} /></View>
         <View style={styles.linkCardPills}><Pill theme={theme}>Mutual LINK</Pill><Pill theme={theme}>Private</Pill></View>
       </Pressable>
       <Pressable onPress={openScanner} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="scan" size={20} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Scan a LINK</Text></Pressable>
@@ -391,7 +451,7 @@ function SettingsRow({ theme, icon, title, subtitle, right, last = false }) {
   return <View style={[styles.settingsRow, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}><View style={[styles.settingsIcon, { backgroundColor: theme.soft }]}><Ionicons name={icon} size={18} color={theme.text} /></View><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{subtitle}</Text></View>{right}</View>;
 }
 
-function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setThemeSetting, privacy, setPrivacy, openAccountSwitcher, resetDemo }) {
+function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setThemeSetting, privacy, setPrivacy, openAccountSwitcher, openCustomStatus, resetDemo }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(activeProfile);
   useEffect(() => setDraft(activeProfile), [activeProfile]);
@@ -399,7 +459,6 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
     if (!draft.name.trim()) return Alert.alert('Name required', 'Add a display name first.');
     updateProfile({ ...draft, username: normalizeUsername(draft.username) }); setEditing(false);
   };
-  const statuses = ['Available', 'Outside', 'At work', 'At event', 'Do not disturb'];
   const applyProfilePhoto = (photoUri) => {
     setDraft(prev => ({ ...prev, photoUri }));
     if (!editing) updateProfile({ ...activeProfile, photoUri });
@@ -438,11 +497,15 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
           <TextInput value={draft.bio} onChangeText={bio => setDraft({ ...draft, bio })} placeholder="Short bio" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
           <TextInput value={draft.socials?.instagram || ''} onChangeText={instagram => setDraft({ ...draft, socials: { ...(draft.socials || {}), instagram } })} autoCapitalize="none" placeholder="Instagram @handle" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
           <TextInput value={draft.socials?.spotify || ''} onChangeText={spotify => setDraft({ ...draft, socials: { ...(draft.socials || {}), spotify } })} placeholder="Spotify name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
-        </View> : <><Text style={[styles.profileName, { color: theme.text }]}>{activeProfile.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{activeProfile.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{activeProfile.bio}</Text><Pill theme={theme} tone="accent">{activeProfile.status}</Pill></>}
+        </View> : <><Text style={[styles.profileName, { color: theme.text }]}>{activeProfile.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{activeProfile.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{activeProfile.bio}</Text><StatusBadge person={activeProfile} theme={theme} /></>}
       </View>
 
-      <SectionTitle theme={theme}>Status</SectionTitle>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRow}>{statuses.map(s => <Pressable key={s} onPress={() => updateProfile({ ...activeProfile, status: s })} style={[styles.statusChoice, { backgroundColor: activeProfile.status === s ? theme.inverse : theme.soft }]}><Text style={{ color: activeProfile.status === s ? theme.inverseText : theme.text, fontWeight: '700', fontSize: 12 }}>{s}</Text></Pressable>)}</ScrollView>
+      <SectionTitle theme={theme} action="Custom" onAction={openCustomStatus}>Status</SectionTitle>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statusRow}>{STATUS_PRESETS.map(s => {
+        const active = activeProfile.status === s.label && activeProfile.statusIcon === s.icon;
+        return <Pressable key={s.label} onPress={() => updateProfile({ ...activeProfile, status: s.label, statusIcon: s.icon, statusColor: s.color })} style={[styles.statusChoice, { backgroundColor: active ? `${s.color}1F` : theme.soft, borderColor: active ? `${s.color}55` : 'transparent' }]}><Ionicons name={s.icon} size={14} color={active ? s.color : theme.sub} /><Text style={{ color: active ? s.color : theme.text, fontWeight: '800', fontSize: 12 }}>{s.label}</Text></Pressable>;
+      })}<Pressable onPress={openCustomStatus} style={[styles.statusChoice, { backgroundColor: theme.soft, borderColor: theme.border }]}><Ionicons name="color-palette-outline" size={14} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '800', fontSize: 12 }}>Custom</Text></Pressable></ScrollView>
+      <View style={[styles.customStatusPreview, { backgroundColor: theme.card, borderColor: theme.border }]}><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Your status</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>Pick any text, icon and color. LINKs see it across the app.</Text></View><StatusBadge person={activeProfile} theme={theme} /></View>
 
       <SectionTitle theme={theme}>Local accounts</SectionTitle>
       <Pressable onPress={openAccountSwitcher} style={[styles.accountManagerButton, { backgroundColor: theme.card, borderColor: theme.border }]}><View style={[styles.settingsIcon, { backgroundColor: theme.soft }]}><Ionicons name="people-circle-outline" size={20} color={theme.text} /></View><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Switch / create account</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>Test chats and LINK requests from both sides</Text></View><Ionicons name="chevron-forward" size={20} color={theme.sub} /></Pressable>
@@ -458,7 +521,7 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
         <SettingsRow theme={theme} icon="aperture-outline" title="Moments to LINKs" subtitle="Only linked people can see your Moments" right={<Switch value={privacy.momentsToLinks} onValueChange={v => setPrivacy({ ...privacy, momentsToLinks: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} last />
       </View>
       <View style={[styles.gestureTip, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="return-up-back-outline" size={20} color={ACCENT} /><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Swipe to go back</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>On detail pages, swipe right from the left edge to go back. In chat, swipe a message right to reply.</Text></View></View>
-      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.3 demo</Text></Pressable>
+      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.4 demo</Text></Pressable>
     </ScrollView>
   );
 }
@@ -522,7 +585,7 @@ function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, 
     <EdgeSwipeBack onBack={onBack}>
     <KeyboardAvoidingView style={[styles.flexOne, { backgroundColor: theme.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.flexOne}>
-        <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}><IconButton icon="chevron-back" onPress={onBack} theme={theme} /><Pressable onPress={() => onOpenProfile(person)} style={styles.chatHeaderPerson}><Avatar person={person} size={38} theme={theme} /><View><Text style={[styles.chatHeaderName, { color: theme.text }]}>{person.name}</Text><Text style={[styles.chatHeaderStatus, { color: theme.success }]}>{person.status || 'Linked'}</Text></View></Pressable><IconButton icon="videocam-outline" onPress={() => Alert.alert('LINK Call', 'Voice & video calling UI is reserved for a future backend build.')} theme={theme} /></View>
+        <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}><IconButton icon="chevron-back" onPress={onBack} theme={theme} /><Pressable onPress={() => onOpenProfile(person)} style={styles.chatHeaderPerson}><Avatar person={person} size={38} theme={theme} /><View><Text style={[styles.chatHeaderName, { color: theme.text }]}>{person.name}</Text><View style={{ marginTop: 3 }}><StatusBadge person={person} theme={theme} compact /></View></View></Pressable><IconButton icon="videocam-outline" onPress={() => Alert.alert('LINK Call', 'Voice & video calling UI is reserved for a future backend build.')} theme={theme} /></View>
         <View style={[styles.metContext, { backgroundColor: theme.soft }]}><Ionicons name="link" size={14} color={theme.sub} /><Text style={[styles.metContextText, { color: theme.sub }]}>Mutual LINK · private conversation</Text></View>
         <FlatList ref={listRef} data={messages} keyExtractor={m => m.id} contentContainerStyle={styles.messageList} showsVerticalScrollIndicator={false} onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: false })}
           renderItem={({ item }) => <ChatMessage message={item} mine={item.senderId === activeProfile.id} theme={theme} profiles={profiles} quoted={messages.find(x => x.id === item.replyTo)} onSwipeReply={() => setReplyTo(item)} onLongPress={() => longPress(item)} />}
@@ -546,7 +609,7 @@ function ScannerModal({ visible, onClose, onScanned }) {
 }
 
 function OwnCardModal({ visible, onClose, theme, profile, payload }) {
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={[styles.ownCardModal, { backgroundColor: theme.card }]}><View style={styles.rowBetween}><View><Text style={[styles.linkBrand, { color: theme.text }]}>LINK*</Text><Text style={[styles.cardHint, { color: theme.sub }]}>scan to send request</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View><View style={[styles.qrWrapLarge, { backgroundColor: '#fff' }]}><QRCode value={payload} size={220} color="#0E0F12" backgroundColor="#FFFFFF" /></View><Text style={[styles.modalCardName, { color: theme.text }]}>{profile.name}</Text><Text style={[styles.modalCardUser, { color: theme.sub }]}>{profile.username}</Text><Text style={[styles.modalCardHint, { color: theme.sub }]}>Scanning sends a mutual LINK request. Chat unlocks after acceptance.</Text></View></View></Modal>;
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={[styles.ownCardModal, { backgroundColor: theme.card }]}><View style={styles.rowBetween}><View><Text style={[styles.linkBrand, { color: theme.text }]}>LINK*</Text><Text style={[styles.cardHint, { color: theme.sub }]}>scan to send request</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View><View style={[styles.qrWrapLarge, { backgroundColor: '#fff' }]}><QRCode value={payload} size={220} color="#0E0F12" backgroundColor="#FFFFFF" /></View><Text style={[styles.modalCardName, { color: theme.text }]}>{profile.name}</Text><Text style={[styles.modalCardUser, { color: theme.sub }]}>{profile.username}</Text><View style={{ alignSelf: 'center', marginTop: 10 }}><StatusBadge person={profile} theme={theme} /></View><Text style={[styles.modalCardHint, { color: theme.sub }]}>Scanning sends a mutual LINK request. Chat unlocks after acceptance.</Text></View></View></Modal>;
 }
 
 function NotificationsModal({ visible, onClose, theme, items, markAllRead }) {
@@ -565,7 +628,7 @@ function CreateAccountModal({ visible, onClose, theme, onCreate, existingProfile
     const u = normalizeUsername(username || name);
     if (!name.trim()) return Alert.alert('Name required', 'Enter a display name.');
     if (Object.values(existingProfiles).some(p => p.username.toLowerCase() === u.toLowerCase())) return Alert.alert('Username taken', 'Choose another @username.');
-    onCreate({ name: name.trim(), username: u, bio: bio.trim() || 'new on LINK', status: 'Available' });
+    onCreate({ name: name.trim(), username: u, bio: bio.trim() || 'new on LINK', status: 'Available', statusIcon: 'checkmark-circle', statusColor: '#34C759' });
   };
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={[styles.sheetCard, { backgroundColor: theme.card }]}><View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>New local account</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>Create another test identity</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View><View style={{ gap: 10, marginTop: 18 }}><TextInput value={name} onChangeText={setName} placeholder="Display name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" placeholder="@username" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /><TextInput value={bio} onChangeText={setBio} placeholder="Short bio" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /></View><Pressable onPress={submit} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Text style={{ color: theme.inverseText, fontWeight: '800' }}>Create & switch</Text></Pressable></View></View></Modal>;
 }
@@ -574,7 +637,83 @@ function PersonProfileModal({ visible, onClose, theme, person, connected, privac
   if (!person) return null;
   const showSocials = privacy?.showSocials !== false;
   const showStatus = privacy?.showStatus !== false;
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.profileModal, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><Pill theme={theme}>{person.isLocal ? 'LOCAL ACCOUNT' : 'LINK PROFILE'}</Pill><IconButton icon="close" onPress={onClose} theme={theme} /></View><Avatar person={person} size={84} theme={theme} /><Text style={[styles.profileName, { color: theme.text }]}>{person.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{person.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{person.bio}</Text>{showStatus ? <Pill theme={theme} tone="success">{person.status}</Pill> : null}{showSocials ? <View style={[styles.socialBox, { backgroundColor: theme.soft }]}><View style={styles.socialLine}><Ionicons name="logo-instagram" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.instagram || person.username}</Text></View><View style={styles.socialLine}><Ionicons name="musical-notes-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.spotify || person.name}</Text></View></View> : null}{connected ? <><View style={styles.profileActionRow}><Pressable onPress={() => { onClose(); onChat(); }} style={[styles.profilePrimaryAction, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble-ellipses" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Message</Text></Pressable><Pressable onPress={onToggleFavorite} style={[styles.profileSquareAction, { backgroundColor: favorite ? 'rgba(108,92,231,.14)' : theme.soft }]}><Ionicons name={favorite ? 'star' : 'star-outline'} size={21} color={favorite ? ACCENT : theme.text} /></Pressable></View><Pressable onPress={onWave} style={[styles.waveButton, { backgroundColor: theme.soft }]}><Ionicons name="hand-left-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '800' }}>Send a wave</Text></Pressable></> : <Pressable onPress={() => { onSendRequest?.(); onClose(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="link" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Send LINK request</Text></Pressable>}<Pressable onPress={() => Alert.alert('Safety', 'Block and report controls are prepared for server-backed moderation in a later build.')} style={[styles.safetyButton, { borderColor: theme.border }]}><Ionicons name="shield-outline" size={17} color={theme.sub} /><Text style={{ color: theme.sub, fontWeight: '700' }}>Safety options</Text></Pressable></Pressable></Pressable></Modal>;
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.profileModal, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><Pill theme={theme}>{person.isLocal ? 'LOCAL ACCOUNT' : 'LINK PROFILE'}</Pill><IconButton icon="close" onPress={onClose} theme={theme} /></View><Avatar person={person} size={84} theme={theme} /><Text style={[styles.profileName, { color: theme.text }]}>{person.name}</Text><Text style={[styles.profileUser, { color: theme.sub }]}>{person.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{person.bio}</Text>{showStatus ? <StatusBadge person={person} theme={theme} /> : null}{showSocials ? <View style={[styles.socialBox, { backgroundColor: theme.soft }]}><View style={styles.socialLine}><Ionicons name="logo-instagram" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.instagram || person.username}</Text></View><View style={styles.socialLine}><Ionicons name="musical-notes-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.spotify || person.name}</Text></View></View> : null}{connected ? <><View style={styles.profileActionRow}><Pressable onPress={() => { onClose(); onChat(); }} style={[styles.profilePrimaryAction, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble-ellipses" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Message</Text></Pressable><Pressable onPress={onToggleFavorite} style={[styles.profileSquareAction, { backgroundColor: favorite ? 'rgba(108,92,231,.14)' : theme.soft }]}><Ionicons name={favorite ? 'star' : 'star-outline'} size={21} color={favorite ? ACCENT : theme.text} /></Pressable></View><Pressable onPress={onWave} style={[styles.waveButton, { backgroundColor: theme.soft }]}><Ionicons name="hand-left-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '800' }}>Send a wave</Text></Pressable></> : <Pressable onPress={() => { onSendRequest?.(); onClose(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="link" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Send LINK request</Text></Pressable>}<Pressable onPress={() => Alert.alert('Safety', 'Block and report controls are prepared for server-backed moderation in a later build.')} style={[styles.safetyButton, { borderColor: theme.border }]}><Ionicons name="shield-outline" size={17} color={theme.sub} /><Text style={{ color: theme.sub, fontWeight: '700' }}>Safety options</Text></Pressable></Pressable></Pressable></Modal>;
+}
+
+
+function NoteComposerModal({ visible, onClose, theme, currentNote, onSave, onDelete }) {
+  const [text, setText] = useState('');
+  const [emoji, setEmoji] = useState('💭');
+  const [audience, setAudience] = useState('links');
+  const emojis = ['💭', '✨', '🌙', '🎧', '🫶', '🔥', '👀', '☕'];
+  useEffect(() => {
+    if (visible) {
+      setText(currentNote?.text || '');
+      setEmoji(currentNote?.emoji || '💭');
+      setAudience(currentNote?.audience || 'links');
+    }
+  }, [visible, currentNote?.id]);
+  const save = () => {
+    const clean = text.trim();
+    if (!clean) return Alert.alert('Write a note', 'Add a short note for your LINKs.');
+    onSave({ text: clean.slice(0, 60), emoji, audience });
+    onClose();
+  };
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.noteComposerCard, { backgroundColor: theme.card }]} onPress={() => {}}>
+      <View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Your Note</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>Lives above your avatar for 24 hours.</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+      <View style={[styles.notePreviewBig, { backgroundColor: theme.soft, borderColor: theme.border }]}><Text style={styles.notePreviewEmoji}>{emoji}</Text><Text numberOfLines={2} style={[styles.notePreviewText, { color: theme.text }]}>{text.trim() || 'What’s on your mind?'}</Text></View>
+      <TextInput value={text} onChangeText={v => setText(v.slice(0, 60))} placeholder="Leave a note…" placeholderTextColor={theme.sub} maxLength={60} style={[styles.noteInput, { backgroundColor: theme.input, color: theme.text }]} />
+      <View style={styles.noteMetaLine}><Text style={[styles.settingsSub, { color: theme.sub }]}>Emoji</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{text.length}/60</Text></View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.noteEmojiRow}>{emojis.map(e => <Pressable key={e} onPress={() => setEmoji(e)} style={[styles.noteEmojiChoice, { backgroundColor: emoji === e ? theme.inverse : theme.soft }]}><Text style={{ fontSize: 20 }}>{e}</Text></Pressable>)}</ScrollView>
+      <Text style={[styles.settingsSub, { color: theme.sub, marginTop: 14 }]}>Who can see it?</Text>
+      <View style={styles.noteAudienceRow}><Pressable onPress={() => setAudience('links')} style={[styles.noteAudienceChoice, { backgroundColor: audience === 'links' ? theme.inverse : theme.soft }]}><Ionicons name="people" size={16} color={audience === 'links' ? theme.inverseText : theme.text} /><Text style={{ color: audience === 'links' ? theme.inverseText : theme.text, fontWeight: '800', fontSize: 12 }}>All LINKs</Text></Pressable><Pressable onPress={() => setAudience('close')} style={[styles.noteAudienceChoice, { backgroundColor: audience === 'close' ? ACCENT : theme.soft }]}><Ionicons name="star" size={16} color={audience === 'close' ? '#fff' : theme.text} /><Text style={{ color: audience === 'close' ? '#fff' : theme.text, fontWeight: '800', fontSize: 12 }}>Close LINKs</Text></Pressable></View>
+      <Pressable onPress={save} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Ionicons name="arrow-up" size={17} color={theme.inverseText} /><Text style={{ color: theme.inverseText, fontWeight: '900' }}>{currentNote ? 'Update Note' : 'Share Note'}</Text></Pressable>
+      {currentNote ? <Pressable onPress={() => { onDelete(); onClose(); }} style={styles.noteDeleteButton}><Ionicons name="trash-outline" size={16} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Delete Note</Text></Pressable> : null}
+    </Pressable></Pressable>
+  </Modal>;
+}
+
+function NoteReplyModal({ visible, onClose, theme, note, person, onReply }) {
+  const [reply, setReply] = useState('');
+  useEffect(() => { if (visible) setReply(''); }, [visible, note?.id]);
+  if (!note || !person) return null;
+  const send = (value = reply) => {
+    const clean = value.trim();
+    if (!clean) return;
+    onReply(clean);
+    setReply('');
+    onClose();
+  };
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.noteReplyCard, { backgroundColor: theme.card }]} onPress={() => {}}>
+      <View style={styles.rowBetween}><View style={styles.chatHeaderPerson}><Avatar person={person} size={42} theme={theme} /><View><Text style={[styles.settingsTitle, { color: theme.text }]}>{person.name}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>Reply privately to their Note</Text></View></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+      <View style={[styles.noteReplyQuote, { backgroundColor: theme.soft }]}><Text style={{ fontSize: 24 }}>{note.emoji || '💭'}</Text><Text style={[styles.noteReplyQuoteText, { color: theme.text }]}>{note.text}</Text>{note.audience === 'close' ? <Pill theme={theme} tone="accent">CLOSE LINKS</Pill> : null}</View>
+      <View style={styles.quickReactionRow}>{['❤️', '🔥', '😂', '👋'].map(e => <Pressable key={e} onPress={() => send(e)} style={[styles.quickReaction, { backgroundColor: theme.soft }]}><Text style={{ fontSize: 21 }}>{e}</Text></Pressable>)}</View>
+      <View style={[styles.noteReplyComposer, { backgroundColor: theme.input }]}><TextInput value={reply} onChangeText={setReply} placeholder="Reply to Note…" placeholderTextColor={theme.sub} style={[styles.noteReplyInput, { color: theme.text }]} onSubmitEditing={() => send()} returnKeyType="send" /><Pressable disabled={!reply.trim()} onPress={() => send()} style={[styles.noteReplySend, { backgroundColor: reply.trim() ? theme.inverse : theme.soft }]}><Ionicons name="arrow-up" size={18} color={reply.trim() ? theme.inverseText : theme.sub} /></Pressable></View>
+    </Pressable></Pressable>
+  </Modal>;
+}
+
+function CustomStatusModal({ visible, onClose, theme, profile, onSave }) {
+  const meta = getStatusMeta(profile);
+  const [label, setLabel] = useState(meta.label);
+  const [icon, setIcon] = useState(meta.icon);
+  const [color, setColor] = useState(meta.color);
+  useEffect(() => { if (visible) { const m = getStatusMeta(profile); setLabel(m.label); setIcon(m.icon); setColor(m.color); } }, [visible, profile?.id, profile?.status, profile?.statusIcon, profile?.statusColor]);
+  const preview = { ...profile, status: label.trim() || 'My status', statusIcon: icon, statusColor: color };
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.customStatusCard, { backgroundColor: theme.card }]} onPress={() => {}}>
+      <View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Custom status</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>Make your presence feel like you.</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+      <View style={[styles.customStatusHero, { backgroundColor: theme.soft }]}><Avatar person={profile} size={52} theme={theme} /><View style={{ flex: 1 }}><Text style={[styles.personName, { color: theme.text }]}>{profile.name}</Text><View style={{ marginTop: 6 }}><StatusBadge person={preview} theme={theme} /></View></View></View>
+      <TextInput value={label} onChangeText={v => setLabel(v.slice(0, 28))} maxLength={28} placeholder="e.g. Studio all night" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text, marginTop: 16 }]} />
+      <Text style={[styles.settingsSub, { color: theme.sub, marginTop: 14 }]}>Icon</Text>
+      <View style={styles.statusIconGrid}>{STATUS_ICONS.map(i => <Pressable key={i} onPress={() => setIcon(i)} style={[styles.statusIconChoice, { backgroundColor: icon === i ? `${color}20` : theme.soft, borderColor: icon === i ? `${color}66` : 'transparent' }]}><Ionicons name={i} size={20} color={icon === i ? color : theme.sub} /></Pressable>)}</View>
+      <Text style={[styles.settingsSub, { color: theme.sub, marginTop: 14 }]}>Color</Text>
+      <View style={styles.statusColorGrid}>{STATUS_COLORS.map(c => <Pressable key={c} onPress={() => setColor(c)} style={[styles.statusColorChoice, { backgroundColor: c, borderColor: color === c ? theme.text : 'transparent' }]}>{color === c ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}</Pressable>)}</View>
+      <Pressable onPress={() => { if (!label.trim()) return Alert.alert('Status text', 'Add a short custom status.'); onSave({ status: label.trim(), statusIcon: icon, statusColor: color }); onClose(); }} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Ionicons name="checkmark" size={17} color={theme.inverseText} /><Text style={{ color: theme.inverseText, fontWeight: '900' }}>Use custom status</Text></Pressable>
+    </Pressable></Pressable>
+  </Modal>;
 }
 
 function MomentComposerModal({ visible, onClose, theme, activeProfile, onPost }) {
@@ -593,9 +732,28 @@ function MomentViewerModal({ visible, onClose, theme, moment, owner }) {
   return <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}><EdgeSwipeBack onBack={onClose}><View style={styles.momentViewer}><SafeAreaView style={styles.flexOne}><View style={styles.momentViewerHeader}><View style={styles.chatHeaderPerson}><Avatar person={owner} size={38} theme={dark} /><View><Text style={{ color: '#fff', fontWeight: '800' }}>{owner.name}</Text><Text style={{ color: 'rgba(255,255,255,.55)', fontSize: 10 }}>Moment · today</Text></View></View><Pressable onPress={onClose} style={styles.scannerClose}><Ionicons name="close" size={24} color="#fff" /></Pressable></View><View style={styles.momentViewerContent}>{moment.imageUri ? <Image source={{ uri: moment.imageUri }} style={styles.momentViewerImage} resizeMode="cover" /> : <><Text style={styles.momentEmoji}>{moment.emoji || '✨'}</Text><Text style={styles.momentBigCaption}>{moment.caption}</Text></>}</View>{moment.imageUri ? <View style={styles.momentCaptionOverlay}><Text style={{ color: '#fff', fontSize: 18, fontWeight: '800', textAlign: 'center' }}>{moment.caption}</Text></View> : null}</SafeAreaView></View></EdgeSwipeBack></Modal>;
 }
 
-function TabBar({ tab, setTab, theme }) {
-  const items = [['home', 'home-outline'], ['people', 'people-outline'], ['link', 'add'], ['chats', 'chatbubble-ellipses-outline'], ['profile', 'person-outline']];
-  return <View style={[styles.tabBar, { backgroundColor: theme.tab, borderTopColor: theme.border }]}>{items.map(([key, icon]) => { const active = tab === key; const center = key === 'link'; return <Pressable key={key} onPress={() => setTab(key)} style={styles.tabItem}><View style={center ? [styles.centerTab, { backgroundColor: active ? ACCENT : theme.inverse }] : null}><Ionicons name={active && !center ? icon.replace('-outline', '') : icon} size={center ? 26 : 23} color={center ? '#fff' : active ? theme.text : theme.sub} /></View>{!center ? <View style={[styles.tabDot, { backgroundColor: active ? ACCENT : 'transparent' }]} /> : null}</Pressable>; })}</View>;
+function TabBar({ tab, setTab, theme, darkMode }) {
+  const items = [
+    ['home', 'home-outline', 'Home'],
+    ['people', 'people-outline', 'People'],
+    ['link', 'add', 'LINK'],
+    ['chats', 'chatbubble-ellipses-outline', 'Chats'],
+    ['profile', 'person-outline', 'Profile'],
+  ];
+  return <View style={styles.tabBarShell} pointerEvents="box-none">
+    <View style={[styles.tabGlass, { borderColor: darkMode ? 'rgba(255,255,255,.13)' : 'rgba(255,255,255,.86)', shadowColor: '#000' }]}>
+      <BlurView intensity={darkMode ? 72 : 88} tint={darkMode ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: darkMode ? 'rgba(18,20,25,.42)' : 'rgba(255,255,255,.43)' }]} />
+      <View style={styles.tabInner}>{items.map(([key, icon, label]) => {
+        const active = tab === key;
+        const center = key === 'link';
+        return <Pressable key={key} onPress={() => setTab(key)} style={styles.tabItem}>
+          {center ? <View style={[styles.centerTabGlass, { backgroundColor: active ? ACCENT : (darkMode ? '#2C2F36' : '#111318'), borderColor: darkMode ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.94)' }]}><Ionicons name="add" size={25} color="#fff" /></View> : <View style={[styles.tabActiveCapsule, active && { backgroundColor: darkMode ? 'rgba(255,255,255,.11)' : 'rgba(255,255,255,.74)', borderColor: darkMode ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.95)' }]}><Ionicons name={active ? icon.replace('-outline', '') : icon} size={21} color={active ? theme.text : theme.sub} /><Text style={[styles.tabLabel, { color: active ? theme.text : theme.sub, opacity: active ? 1 : .76 }]}>{label}</Text></View>}
+        </Pressable>;
+      })}</View>
+      <View style={[styles.glassHighlight, { backgroundColor: darkMode ? 'rgba(255,255,255,.09)' : 'rgba(255,255,255,.72)' }]} pointerEvents="none" />
+    </View>
+  </View>;
 }
 
 export default function App() {
@@ -612,6 +770,9 @@ export default function App() {
   const [profileModalId, setProfileModalId] = useState(null);
   const [momentComposerOpen, setMomentComposerOpen] = useState(false);
   const [momentViewId, setMomentViewId] = useState(null);
+  const [noteComposerOpen, setNoteComposerOpen] = useState(false);
+  const [noteReplyId, setNoteReplyId] = useState(null);
+  const [customStatusOpen, setCustomStatusOpen] = useState(false);
 
   const activeMode = data.themeSetting === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : data.themeSetting;
   const theme = activeMode === 'dark' ? dark : light;
@@ -626,10 +787,13 @@ export default function App() {
   const activeMessages = activeChatId ? data.conversations[threadKey(data.activeAccountId, activeChatId)] || [] : [];
   const profileModalPerson = profileModalId ? data.profiles[profileModalId] : null;
   const momentView = momentViewId ? data.moments.find(m => m.id === momentViewId) : null;
+  const ownNote = (data.notes || []).find(n => n.ownerId === data.activeAccountId && (n.expiresAt || 0) > Date.now()) || null;
+  const noteReply = noteReplyId ? (data.notes || []).find(n => n.id === noteReplyId) : null;
+  const noteReplyPerson = noteReply ? data.profiles[noteReply.ownerId] : null;
 
   const payload = useMemo(() => {
     if (!activeProfile) return 'LINK::invalid';
-    return `LINK::${encodeURIComponent(JSON.stringify({ v: 2, id: activeProfile.id, name: activeProfile.name, username: activeProfile.username, bio: activeProfile.bio, status: activeProfile.status }))}`;
+    return `LINK::${encodeURIComponent(JSON.stringify({ v: 2, id: activeProfile.id, name: activeProfile.name, username: activeProfile.username, bio: activeProfile.bio, status: activeProfile.status, statusIcon: activeProfile.statusIcon, statusColor: activeProfile.statusColor }))}`;
   }, [activeProfile]);
 
   useEffect(() => {
@@ -641,10 +805,11 @@ export default function App() {
           if (saved?.profiles && saved?.activeAccountId) {
             const base = initialData();
             setData({
-              ...base, ...saved, version: 3,
+              ...base, ...saved, version: 4,
               privacy: { ...base.privacy, ...(saved.privacy || {}) },
               notifications: { ...base.notifications, ...(saved.notifications || {}) },
               favorites: { ...base.favorites, ...(saved.favorites || {}) },
+              notes: Array.isArray(saved.notes) ? saved.notes : base.notes,
             });
           }
         }
@@ -757,6 +922,22 @@ export default function App() {
   const postMoment = ({ imageUri, caption, emoji }) => {
     mutate(prev => ({ ...prev, moments: [{ id: uid('mom'), ownerId: prev.activeAccountId, imageUri, caption, emoji, createdAt: Date.now() }, ...prev.moments] }));
   };
+  const saveNote = ({ text, emoji, audience }) => {
+    mutate(prev => {
+      const clean = (prev.notes || []).filter(n => n.ownerId !== prev.activeAccountId);
+      const now = Date.now();
+      return { ...prev, notes: [{ id: uid('note'), ownerId: prev.activeAccountId, text, emoji, audience, createdAt: now, expiresAt: now + 24 * 60 * 60 * 1000 }, ...clean] };
+    });
+  };
+  const deleteOwnNote = () => mutate(prev => ({ ...prev, notes: (prev.notes || []).filter(n => n.ownerId !== prev.activeAccountId) }));
+  const replyToNote = (note, text) => {
+    if (!note?.ownerId) return;
+    const owner = data.profiles[note.ownerId];
+    if (!owner) return;
+    sendMessage(owner.id, { type: 'text', text: `↪ ${note.emoji || '💭'} ${note.text}
+${text}` });
+    Alert.alert('Reply sent', `Your reply was sent privately to ${owner.name}.`);
+  };
   const markNotificationsRead = () => mutate(prev => ({ ...prev, notifications: { ...prev.notifications, [prev.activeAccountId]: (prev.notifications[prev.activeAccountId] || []).map(n => ({ ...n, read: true })) } }));
 
   const toggleFavorite = (personId) => mutate(prev => {
@@ -773,7 +954,7 @@ export default function App() {
     Alert.alert('Wave sent 👋', `Switch to ${person.name} to see it.`);
   };
 
-  const resetDemo = () => Alert.alert('Reset LINK 0.3?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
+  const resetDemo = () => Alert.alert('Reset LINK 0.4?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
 
   if (!hydrated || !activeProfile) return <View style={[styles.loading, { backgroundColor: light.bg }]}><View style={styles.loadingLogo}><Text style={styles.loadingLogoText}>L*</Text></View><Text style={{ fontWeight: '900', color: light.text, fontSize: 17 }}>LINK</Text><Text style={{ color: light.sub, fontSize: 12 }}>{BUILD}</Text></View>;
 
@@ -783,12 +964,12 @@ export default function App() {
     <View style={[styles.app, { backgroundColor: theme.bg }]}>
       <RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
       <SafeAreaView style={styles.safe}><View style={styles.content}>
-        {tab === 'home' && <HomeScreen theme={theme} activeProfile={activeProfile} connectedProfiles={connectedProfiles} conversations={data.conversations} activeId={data.activeAccountId} requests={incomingRequests} notifications={data.notifications} moments={data.moments} profiles={data.profiles} favoriteIds={favoriteIds} openOwnCard={() => setCardOpen(true)} openScanner={() => setScannerOpen(true)} openChat={openChat} openAccountSwitcher={() => setAccountsOpen(true)} openNotifications={() => setNotificationsOpen(true)} onAccept={acceptRequest} onDecline={declineRequest} onCreateMoment={() => setMomentComposerOpen(true)} onOpenMoment={m => setMomentViewId(m.id)} setTab={setTab} />}
+        {tab === 'home' && <HomeScreen theme={theme} activeProfile={activeProfile} connectedProfiles={connectedProfiles} conversations={data.conversations} activeId={data.activeAccountId} requests={incomingRequests} notifications={data.notifications} moments={data.moments} notes={data.notes || []} profiles={data.profiles} favorites={data.favorites || {}} favoriteIds={favoriteIds} openOwnCard={() => setCardOpen(true)} openScanner={() => setScannerOpen(true)} openChat={openChat} openAccountSwitcher={() => setAccountsOpen(true)} openNotifications={() => setNotificationsOpen(true)} onAccept={acceptRequest} onDecline={declineRequest} onCreateMoment={() => setMomentComposerOpen(true)} onOpenMoment={m => setMomentViewId(m.id)} onOwnNote={() => setNoteComposerOpen(true)} onOpenNote={(n) => setNoteReplyId(n.id)} setTab={setTab} />}
         {tab === 'people' && <PeopleScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} localAccountIds={data.localAccountIds} requests={data.requests} favoriteIds={favoriteIds} openProfile={p => setProfileModalId(p.id)} openChat={openChat} sendRequest={sendRequest} />}
         {tab === 'link' && <LinkScreen theme={theme} activeProfile={activeProfile} payload={payload} localProfiles={localProfiles} relationships={data.relationships} requests={data.requests} openScanner={() => setScannerOpen(true)} openOwnCard={() => setCardOpen(true)} sendRequest={sendRequest} />}
         {tab === 'chats' && <ChatsScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} conversations={data.conversations} favoriteIds={favoriteIds} openChat={openChat} />}
-        {tab === 'profile' && <ProfileScreen theme={theme} activeProfile={activeProfile} updateProfile={updateActiveProfile} themeSetting={data.themeSetting} setThemeSetting={setThemeSetting} privacy={privacy} setPrivacy={setPrivacy} openAccountSwitcher={() => setAccountsOpen(true)} resetDemo={resetDemo} />}
-      </View><TabBar tab={tab} setTab={setTab} theme={theme} /></SafeAreaView>
+        {tab === 'profile' && <ProfileScreen theme={theme} activeProfile={activeProfile} updateProfile={updateActiveProfile} themeSetting={data.themeSetting} setThemeSetting={setThemeSetting} privacy={privacy} setPrivacy={setPrivacy} openAccountSwitcher={() => setAccountsOpen(true)} openCustomStatus={() => setCustomStatusOpen(true)} resetDemo={resetDemo} />}
+      </View><TabBar tab={tab} setTab={setTab} theme={theme} darkMode={activeMode === 'dark'} /></SafeAreaView>
 
       <ScannerModal visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={onScanned} />
       <OwnCardModal visible={cardOpen} onClose={() => setCardOpen(false)} theme={theme} profile={activeProfile} payload={payload} />
@@ -798,6 +979,9 @@ export default function App() {
       <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} onSendRequest={() => profileModalId && sendRequest(profileModalId)} />
       <MomentComposerModal visible={momentComposerOpen} onClose={() => setMomentComposerOpen(false)} theme={theme} activeProfile={activeProfile} onPost={postMoment} />
       <MomentViewerModal visible={!!momentViewId} onClose={() => setMomentViewId(null)} theme={theme} moment={momentView} owner={momentView ? data.profiles[momentView.ownerId] : null} />
+      <NoteComposerModal visible={noteComposerOpen} onClose={() => setNoteComposerOpen(false)} theme={theme} currentNote={ownNote} onSave={saveNote} onDelete={deleteOwnNote} />
+      <NoteReplyModal visible={!!noteReplyId} onClose={() => setNoteReplyId(null)} theme={theme} note={noteReply} person={noteReplyPerson} onReply={text => noteReply && replyToNote(noteReply, text)} />
+      <CustomStatusModal visible={customStatusOpen} onClose={() => setCustomStatusOpen(false)} theme={theme} profile={activeProfile} onSave={patch => updateActiveProfile({ ...activeProfile, ...patch })} />
     </View>
   );
 }
@@ -820,11 +1004,13 @@ const styles = StyleSheet.create({
   primaryButton: { flex: 1, minHeight: 48, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, secondaryButton: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, primaryButtonText: { fontWeight: '900', fontSize: 14 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   pill: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999, alignSelf: 'flex-start' }, pillText: { fontSize: 9.5, fontWeight: '900', letterSpacing: .35 },
+  statusBadge: { maxWidth: 190, minHeight: 29, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }, statusBadgeCompact: { minHeight: 23, paddingHorizontal: 7, paddingVertical: 4, gap: 4 }, statusBadgeText: { fontSize: 11.5, fontWeight: '900', maxWidth: 145 },
   sectionTitleRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 10 }, sectionTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -.4 },
   momentStrip: { gap: 12, paddingBottom: 10 }, momentItem: { width: 70, alignItems: 'center' }, momentRing: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, alignItems: 'center', justifyContent: 'center' }, momentPlus: { position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' }, momentName: { fontSize: 10, marginTop: 6, maxWidth: 68 },
+  notesStrip: { gap: 12, paddingTop: 4, paddingBottom: 9, paddingRight: 10 }, notePerson: { width: 94, alignItems: 'center', paddingTop: 37 }, noteBubble: { position: 'absolute', top: 0, left: 2, right: 2, minHeight: 46, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 9, paddingVertical: 7, justifyContent: 'center', shadowColor: '#000', shadowOpacity: .05, shadowRadius: 9, shadowOffset: { width: 0, height: 3 } }, noteBubbleText: { fontSize: 10.5, lineHeight: 14, fontWeight: '700', textAlign: 'center' }, noteCloseIcon: { position: 'absolute', right: 5, top: 5 }, noteAvatarWrap: { position: 'relative' }, notePlus: { position: 'absolute', right: -4, bottom: -3, width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' }, noteName: { marginTop: 5, fontSize: 10, maxWidth: 90 },
   requestCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 12, flexDirection: 'row', gap: 12, marginBottom: 9 }, requestActions: { flexDirection: 'row', gap: 7, marginTop: 10 }, requestAccept: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 11 }, requestDecline: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 11 },
   statsRow: { flexDirection: 'row', gap: 10, marginTop: 17, marginBottom: 16 }, statCard: { flex: 1, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, padding: 16 }, statNumber: { fontSize: 24, fontWeight: '900', letterSpacing: -.8 }, statLabel: { fontSize: 12.5, marginTop: 2 },
-  personRow: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 9 }, personName: { fontSize: 15.5, fontWeight: '900' }, personSub: { fontSize: 12.5, marginTop: 4 }, miniChatButton: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, metaText: { fontSize: 10.5, marginLeft: 8 },
+  personRow: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 9 }, personName: { fontSize: 15.5, fontWeight: '900' }, personSub: { fontSize: 12.5, marginTop: 4 }, personSubLine: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 5 }, miniChatButton: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, metaText: { fontSize: 10.5, marginLeft: 8 },
   unreadDot: { position: 'absolute', right: 0, top: 0, width: 11, height: 11, borderRadius: 6, backgroundColor: ACCENT, borderWidth: 2, borderColor: '#fff' }, unreadCount: { minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' }, unreadCountText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   localLabCard: { marginTop: 19, borderRadius: 26, padding: 20, flexDirection: 'row', alignItems: 'center', gap: 18 }, eventTitle: { fontSize: 23, fontWeight: '900', letterSpacing: -.7, marginTop: 6 }, eventBody: { fontSize: 13, lineHeight: 19, marginTop: 7 }, eventIcon: { width: 54, height: 54, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   searchBox: { marginHorizontal: 18, height: 48, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 9, marginBottom: 7 }, searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 }, listPad: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 120 }, emptyInline: { fontSize: 12.5, paddingVertical: 16 },
@@ -838,11 +1024,11 @@ const styles = StyleSheet.create({
   gestureTip: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 22 },
   profileActionRow: { width: '100%', flexDirection: 'row', gap: 9, marginTop: 18 }, profilePrimaryAction: { flex: 1, minHeight: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }, profileSquareAction: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, waveButton: { width: '100%', minHeight: 46, borderRadius: 15, marginTop: 9, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 },
   profileCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 28, padding: 22, alignItems: 'center', marginBottom: 12 }, profileName: { fontSize: 24, fontWeight: '900', marginTop: 14, letterSpacing: -.7 }, profileUser: { fontSize: 14, marginTop: 3 }, profileBio: { fontSize: 13.5, marginTop: 10, marginBottom: 12, textAlign: 'center' }, profileInput: { width: '100%', minHeight: 46, borderRadius: 14, paddingHorizontal: 14, fontSize: 15 },
-  statusRow: { gap: 8, paddingBottom: 4 }, statusChoice: { paddingHorizontal: 13, paddingVertical: 10, borderRadius: 14 },
+  statusRow: { gap: 8, paddingBottom: 4 }, statusChoice: { minHeight: 38, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 6 }, customStatusPreview: { marginTop: 10, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
   accountManagerButton: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11 },
   themeRow: { flexDirection: 'row', gap: 8 }, themeOption: { flex: 1, minHeight: 48, borderRadius: 16, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' }, settingHint: { fontSize: 12, lineHeight: 18, marginTop: 9, marginBottom: 4 },
   settingsCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, overflow: 'hidden' }, settingsRow: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 14 }, settingsIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, settingsTitle: { fontWeight: '900', fontSize: 14 }, settingsSub: { fontSize: 11.5, lineHeight: 16, marginTop: 2 }, resetButton: { marginTop: 22, marginBottom: 18, height: 48, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
-  tabBar: { height: 78, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingBottom: Platform.OS === 'ios' ? 14 : 6, paddingHorizontal: 6 }, tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', height: 58 }, centerTab: { width: 50, height: 50, borderRadius: 18, alignItems: 'center', justifyContent: 'center', transform: [{ translateY: -6 }] }, tabDot: { width: 4, height: 4, borderRadius: 2, marginTop: 5 },
+  tabBarShell: { height: Platform.OS === 'ios' ? 88 : 80, paddingHorizontal: 13, paddingTop: 5, paddingBottom: Platform.OS === 'ios' ? 8 : 6, backgroundColor: 'transparent' }, tabGlass: { flex: 1, borderRadius: 27, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', shadowOpacity: .14, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 12 }, tabInner: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 5 }, tabItem: { flex: 1, height: 58, alignItems: 'center', justifyContent: 'center' }, tabActiveCapsule: { minWidth: 54, minHeight: 48, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 6 }, tabLabel: { fontSize: 8.5, fontWeight: '800', letterSpacing: -.1 }, centerTabGlass: { width: 48, height: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: .18, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } }, glassHighlight: { position: 'absolute', left: 18, right: 18, top: 1, height: 1, borderRadius: 999, opacity: .8 },
   chatHeader: { height: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth }, chatHeaderPerson: { flexDirection: 'row', gap: 9, alignItems: 'center' }, chatHeaderName: { fontWeight: '900', fontSize: 14.5 }, chatHeaderStatus: { fontSize: 10.5, marginTop: 2, fontWeight: '800' }, metContext: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7, marginTop: 10 }, metContextText: { fontSize: 10.5, fontWeight: '700' },
   messageList: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 18, flexGrow: 1 }, messageLine: { flexDirection: 'row', marginVertical: 5 }, bubble: { maxWidth: '82%', borderRadius: 20, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 7 }, bubbleText: { fontSize: 15, lineHeight: 20 }, messageMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 3, marginTop: 5 }, bubbleTime: { fontSize: 9 }, replyQuote: { borderLeftWidth: 2, paddingLeft: 7, marginBottom: 7, maxWidth: 220 }, reactionBadge: { position: 'absolute', bottom: -13, right: 8, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, shadowColor: '#000', shadowOpacity: .08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
   photoMessage: { width: 190, height: 145, borderRadius: 15, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, photoMessageImage: { width: '100%', height: '100%' }, voiceMessage: { width: 190, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
@@ -853,6 +1039,7 @@ const styles = StyleSheet.create({
   sheetCard: { width: '100%', maxWidth: 440, borderRadius: 28, padding: 18, maxHeight: '82%' }, sheetTitle: { fontSize: 24, fontWeight: '900', letterSpacing: -.7 }, sheetSub: { fontSize: 12, marginTop: 3 }, notificationRow: { minHeight: 70, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 }, notificationIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   accountSwitchRow: { minHeight: 62, borderRadius: 17, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 5 }, createAccountButton: { minHeight: 50, borderRadius: 16, marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, tinyHint: { textAlign: 'center', fontSize: 10.5, lineHeight: 15, marginTop: 12 },
   profileModal: { width: '100%', maxWidth: 420, borderRadius: 30, padding: 20, alignItems: 'center' }, socialBox: { width: '100%', borderRadius: 18, padding: 13, marginTop: 16, gap: 12 }, socialLine: { flexDirection: 'row', alignItems: 'center', gap: 9 }, safetyButton: { width: '100%', height: 46, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  noteComposerCard: { width: '100%', maxWidth: 430, borderRadius: 30, padding: 19 }, notePreviewBig: { minHeight: 86, marginTop: 18, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, padding: 15, flexDirection: 'row', alignItems: 'center', gap: 12 }, notePreviewEmoji: { fontSize: 30 }, notePreviewText: { flex: 1, fontSize: 17, lineHeight: 22, fontWeight: '800' }, noteInput: { minHeight: 50, borderRadius: 16, paddingHorizontal: 14, marginTop: 12, fontSize: 15 }, noteMetaLine: { marginTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, noteEmojiRow: { gap: 8, marginTop: 7, paddingRight: 4 }, noteEmojiChoice: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, noteAudienceRow: { flexDirection: 'row', gap: 8, marginTop: 8 }, noteAudienceChoice: { flex: 1, minHeight: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 }, noteDeleteButton: { minHeight: 42, marginTop: 8, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 7 }, noteReplyCard: { width: '100%', maxWidth: 430, borderRadius: 30, padding: 18 }, noteReplyQuote: { borderRadius: 20, padding: 15, marginTop: 18, gap: 8, alignItems: 'flex-start' }, noteReplyQuoteText: { fontSize: 17, lineHeight: 22, fontWeight: '800' }, quickReactionRow: { flexDirection: 'row', gap: 8, marginTop: 12 }, quickReaction: { flex: 1, minHeight: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, noteReplyComposer: { minHeight: 50, borderRadius: 17, marginTop: 12, flexDirection: 'row', alignItems: 'center', paddingLeft: 13, paddingRight: 6 }, noteReplyInput: { flex: 1, fontSize: 15, paddingVertical: 9 }, noteReplySend: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, customStatusCard: { width: '100%', maxWidth: 430, borderRadius: 30, padding: 19 }, customStatusHero: { borderRadius: 21, padding: 14, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 12 }, statusIconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }, statusIconChoice: { width: 45, height: 45, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' }, statusColorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 9 }, statusColorChoice: { width: 34, height: 34, borderRadius: 17, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
   momentComposerPage: { flex: 1 }, momentCameraShell: { flex: 1, marginHorizontal: 12, borderRadius: 30, overflow: 'hidden', backgroundColor: '#15171C', alignItems: 'center', justifyContent: 'center' }, momentComposerBottom: { minHeight: 88, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }, momentCaptionInput: { flex: 1, minHeight: 48, borderRadius: 16, paddingHorizontal: 14, color: '#fff', backgroundColor: 'rgba(255,255,255,.1)' }, shutter: { width: 58, height: 58, borderRadius: 29, borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' }, shutterInner: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#fff' }, momentPost: { width: 50, height: 50, borderRadius: 17, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }, momentSecondary: { width: 50, height: 50, borderRadius: 17, backgroundColor: 'rgba(255,255,255,.12)', alignItems: 'center', justifyContent: 'center' },
   momentViewer: { flex: 1, backgroundColor: '#08090C' }, momentViewerHeader: { minHeight: 68, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, momentViewerContent: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 }, momentViewerImage: { width: '100%', height: '100%', borderRadius: 28 }, momentEmoji: { fontSize: 96 }, momentBigCaption: { color: '#fff', fontSize: 28, fontWeight: '900', textAlign: 'center', marginTop: 22 }, momentCaptionOverlay: { position: 'absolute', bottom: 50, left: 24, right: 24, backgroundColor: 'rgba(0,0,0,.34)', borderRadius: 18, padding: 14 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 9 }, loadingLogo: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: ACCENT }, loadingLogoText: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: -1 },
