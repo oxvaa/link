@@ -28,11 +28,11 @@ import QRCode from 'react-native-qrcode-svg';
 
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
-const BUILD = 'LINK 0.4';
+const BUILD = 'LINK 0.4.1';
 
 const light = {
   bg: '#F6F7FB', card: '#FFFFFF', elevated: '#FFFFFF', text: '#111318', sub: '#6F7582',
-  border: '#E8EAF0', soft: '#F0F1F6', input: '#F2F3F7', tab: 'rgba(255,255,255,0.97)',
+  border: '#E8EAF0', soft: '#F0F1F6', input: '#F2F3F7', tab: 'rgba(255,255,255,0.97)', noteSurface: '#FFFFFF', noteBorder: '#DADDE6',
   inverse: '#111318', inverseText: '#FFFFFF', danger: '#E5484D', success: '#1F9D66', warning: '#F59E0B',
 };
 
@@ -56,7 +56,7 @@ const getStatusMeta = (person = {}) => {
 
 const dark = {
   bg: '#0B0C0F', card: '#13151A', elevated: '#181A20', text: '#F6F7FA', sub: '#9EA3AF',
-  border: '#252832', soft: '#1A1D23', input: '#1B1E25', tab: 'rgba(16,17,21,0.97)',
+  border: '#252832', soft: '#1A1D23', input: '#1B1E25', tab: 'rgba(16,17,21,0.97)', noteSurface: '#202228', noteBorder: '#343843',
   inverse: '#F6F7FA', inverseText: '#111318', danger: '#FF6B6B', success: '#47C98A', warning: '#FFB84D',
 };
 
@@ -258,14 +258,14 @@ function NotesStrip({ theme, activeProfile, connectedProfiles, notes, favorites,
 
   return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesStrip}>
     <Pressable onPress={() => onOwnNote(own)} style={styles.notePerson}>
-      <View style={[styles.noteBubble, { backgroundColor: theme.card, borderColor: own ? ACCENT : theme.border }]}>
+      <View style={[styles.noteBubble, { backgroundColor: theme.noteSurface, borderColor: own ? ACCENT : theme.noteBorder }]}>
         <Text numberOfLines={2} style={[styles.noteBubbleText, { color: own ? theme.text : theme.sub }]}>{own ? `${own.emoji || '💭'} ${own.text}` : 'Leave a note'}</Text>
       </View>
       <View style={styles.noteAvatarWrap}><Avatar person={activeProfile} size={48} theme={theme} /><View style={[styles.notePlus, { backgroundColor: theme.inverse, borderColor: theme.bg }]}><Ionicons name={own ? 'pencil' : 'add'} size={11} color={theme.inverseText} /></View></View>
       <Text numberOfLines={1} style={[styles.noteName, { color: theme.sub }]}>You</Text>
     </Pressable>
     {visible.map(({ person, note }) => <Pressable key={note.id} onPress={() => onOpenNote(note, person)} style={styles.notePerson}>
-      <View style={[styles.noteBubble, { backgroundColor: theme.card, borderColor: theme.border }]}><Text numberOfLines={2} style={[styles.noteBubbleText, { color: theme.text }]}>{note.emoji ? `${note.emoji} ` : ''}{note.text}</Text>{note.audience === 'close' ? <Ionicons name="star" size={9} color={ACCENT} style={styles.noteCloseIcon} /> : null}</View>
+      <View style={[styles.noteBubble, { backgroundColor: theme.noteSurface, borderColor: theme.noteBorder }]}><Text numberOfLines={2} style={[styles.noteBubbleText, { color: theme.text }]}>{note.emoji ? `${note.emoji} ` : ''}{note.text}</Text>{note.audience === 'close' ? <Ionicons name="star" size={9} color={ACCENT} style={styles.noteCloseIcon} /> : null}</View>
       <Avatar person={person} size={48} theme={theme} />
       <Text numberOfLines={1} style={[styles.noteName, { color: theme.sub }]}>{person.name.split(' ')[0]}</Text>
     </Pressable>)}
@@ -361,27 +361,83 @@ function PeopleScreen({ theme, activeId, profiles, connectedIds, localAccountIds
   const [query, setQuery] = useState('');
   const connected = connectedIds.map(id => profiles[id]).filter(Boolean).sort((a, b) => Number(favoriteIds.includes(b.id)) - Number(favoriteIds.includes(a.id)));
   const discover = localAccountIds.map(id => profiles[id]).filter(p => p && p.id !== activeId && !connectedIds.includes(p.id));
-  const match = p => `${p.name} ${p.username} ${p.bio}`.toLowerCase().includes(query.toLowerCase());
+  const cleanQuery = query.trim().toLowerCase();
+  const usernameNeedle = cleanQuery
+    ? (cleanQuery.startsWith('@') ? cleanQuery : `@${cleanQuery.replace(/[^a-z0-9_.]/g, '')}`)
+    : '';
   const pendingTo = (id) => requests.some(r => r.fromId === activeId && r.toId === id);
   const pendingFrom = (id) => requests.some(r => r.fromId === id && r.toId === activeId);
+  const isConnected = (id) => connectedIds.includes(id);
+
+  const searchResults = cleanQuery ? Object.values(profiles)
+    .filter(p => p && p.id !== activeId)
+    .filter(p => {
+      const username = (p.username || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      return username.includes(usernameNeedle) || username.includes(cleanQuery) || name.includes(cleanQuery);
+    })
+    .sort((a, b) => {
+      const au = (a.username || '').toLowerCase();
+      const bu = (b.username || '').toLowerCase();
+      const aExact = au === usernameNeedle ? 1 : 0;
+      const bExact = bu === usernameNeedle ? 1 : 0;
+      if (aExact !== bExact) return bExact - aExact;
+      const aPrefix = au.startsWith(usernameNeedle) ? 1 : 0;
+      const bPrefix = bu.startsWith(usernameNeedle) ? 1 : 0;
+      if (aPrefix !== bPrefix) return bPrefix - aPrefix;
+      if (a.isLocal !== b.isLocal) return Number(b.isLocal) - Number(a.isLocal);
+      return (a.username || '').localeCompare(b.username || '');
+    }) : [];
+
+  const resultAction = (person) => {
+    if (isConnected(person.id)) {
+      return <Pressable onPress={() => openChat(person)} style={[styles.linkRequestButton, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble" size={14} color={theme.inverseText} /></Pressable>;
+    }
+    const incoming = pendingFrom(person.id);
+    const sent = pendingTo(person.id);
+    return <Pressable disabled={incoming || sent} onPress={() => sendRequest(person.id)} style={[styles.linkRequestButton, { backgroundColor: incoming || sent ? theme.soft : theme.inverse }]}><Text style={{ color: incoming || sent ? theme.sub : theme.inverseText, fontWeight: '800', fontSize: 12 }}>{incoming ? 'Incoming' : sent ? 'Sent' : 'LINK'}</Text></Pressable>;
+  };
 
   return (
     <View style={styles.flexOne}>
-      <View style={styles.simpleHeader}><Text style={[styles.bigTitle, { color: theme.text }]}>People</Text><Text style={[styles.headerSub, { color: theme.sub }]}>Your real-life connections.</Text></View>
-      <View style={[styles.searchBox, { backgroundColor: theme.input }]}><Ionicons name="search" size={19} color={theme.sub} /><TextInput placeholder="Search @username or name" placeholderTextColor={theme.sub} value={query} onChangeText={setQuery} style={[styles.searchInput, { color: theme.text }]} /></View>
-      <ScrollView contentContainerStyle={styles.listPad} showsVerticalScrollIndicator={false}>
-        <SectionTitle theme={theme}>Linked</SectionTitle>
-        {connected.filter(match).map(person => <PersonRow key={person.id} person={person} theme={theme} favorite={favoriteIds.includes(person.id)} onPress={() => openProfile(person)} onChat={() => openChat(person)} />)}
-        {!connected.filter(match).length ? <Text style={[styles.emptyInline, { color: theme.sub }]}>No linked people match this search.</Text> : null}
+      <View style={styles.simpleHeader}><Text style={[styles.bigTitle, { color: theme.text }]}>People</Text><Text style={[styles.headerSub, { color: theme.sub }]}>Find a LINK by @username.</Text></View>
+      <View style={[styles.searchBox, { backgroundColor: theme.input }]}>
+        <Ionicons name="search" size={19} color={theme.sub} />
+        <TextInput autoCapitalize="none" autoCorrect={false} placeholder="@username" placeholderTextColor={theme.sub} value={query} onChangeText={setQuery} style={[styles.searchInput, { color: theme.text }]} />
+        {query.length ? <Pressable onPress={() => setQuery('')} hitSlop={10}><Ionicons name="close-circle" size={18} color={theme.sub} /></Pressable> : null}
+      </View>
+      <ScrollView contentContainerStyle={styles.listPad} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {cleanQuery ? <>
+          <View style={styles.usernameSearchHeader}>
+            <View><Text style={[styles.sectionTitle, { color: theme.text }]}>Search results</Text><Text style={[styles.usernameSearchHint, { color: theme.sub }]}>Local test accounts can be found by their @username too.</Text></View>
+            <View style={[styles.searchCountBadge, { backgroundColor: theme.soft }]}><Text style={[styles.searchCountText, { color: theme.sub }]}>{searchResults.length}</Text></View>
+          </View>
+          {searchResults.map(person => (
+            <Pressable key={person.id} onPress={() => openProfile(person)} style={[styles.discoverRow, { backgroundColor: theme.card, borderColor: theme.border }]}> 
+              <Avatar person={person} size={48} theme={theme} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={styles.searchNameRow}><Text numberOfLines={1} style={[styles.personName, { color: theme.text }]}>{person.name}</Text>{person.isLocal ? <View style={[styles.localBadge, { backgroundColor: theme.soft }]}><Text style={[styles.localBadgeText, { color: theme.sub }]}>LOCAL</Text></View> : null}</View>
+                <Text numberOfLines={1} style={[styles.usernameResult, { color: ACCENT }]}>{person.username}</Text>
+                <View style={styles.personSubLine}><StatusBadge person={person} theme={theme} compact />{isConnected(person.id) ? <Pill theme={theme} tone="success">LINKED</Pill> : null}</View>
+              </View>
+              {resultAction(person)}
+            </Pressable>
+          ))}
+          {!searchResults.length ? <View style={[styles.noSearchCard, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="at" size={24} color={theme.sub} /><Text style={[styles.noSearchTitle, { color: theme.text }]}>No @username found</Text><Text style={[styles.noSearchBody, { color: theme.sub }]}>Try the exact username. Local accounts on this device are searchable here.</Text></View> : null}
+        </> : <>
+          <SectionTitle theme={theme}>Linked</SectionTitle>
+          {connected.map(person => <PersonRow key={person.id} person={person} theme={theme} favorite={favoriteIds.includes(person.id)} onPress={() => openProfile(person)} onChat={() => openChat(person)} />)}
+          {!connected.length ? <Text style={[styles.emptyInline, { color: theme.sub }]}>You have no LINKs yet.</Text> : null}
 
-        <SectionTitle theme={theme}>Discover local test accounts</SectionTitle>
-        {discover.filter(match).map(person => (
-          <Pressable key={person.id} onPress={() => openProfile(person)} style={[styles.discoverRow, { backgroundColor: theme.card, borderColor: theme.border }]}> 
-            <Avatar person={person} size={48} theme={theme} />
-            <View style={{ flex: 1 }}><Text style={[styles.personName, { color: theme.text }]}>{person.name}</Text><View style={styles.personSubLine}><Text style={[styles.personSub, { color: theme.sub, marginTop: 0 }]}>{person.username}</Text><StatusBadge person={person} theme={theme} compact /></View></View>
-            <Pressable disabled={pendingTo(person.id) || pendingFrom(person.id)} onPress={() => sendRequest(person.id)} style={[styles.linkRequestButton, { backgroundColor: pendingTo(person.id) || pendingFrom(person.id) ? theme.soft : theme.inverse }]}><Text style={{ color: pendingTo(person.id) || pendingFrom(person.id) ? theme.sub : theme.inverseText, fontWeight: '800', fontSize: 12 }}>{pendingFrom(person.id) ? 'Incoming' : pendingTo(person.id) ? 'Sent' : 'LINK'}</Text></Pressable>
-          </Pressable>
-        ))}
+          <SectionTitle theme={theme}>Discover local test accounts</SectionTitle>
+          {discover.map(person => (
+            <Pressable key={person.id} onPress={() => openProfile(person)} style={[styles.discoverRow, { backgroundColor: theme.card, borderColor: theme.border }]}> 
+              <Avatar person={person} size={48} theme={theme} />
+              <View style={{ flex: 1 }}><View style={styles.searchNameRow}><Text style={[styles.personName, { color: theme.text }]}>{person.name}</Text><View style={[styles.localBadge, { backgroundColor: theme.soft }]}><Text style={[styles.localBadgeText, { color: theme.sub }]}>LOCAL</Text></View></View><View style={styles.personSubLine}><Text style={[styles.personSub, { color: theme.sub, marginTop: 0 }]}>{person.username}</Text><StatusBadge person={person} theme={theme} compact /></View></View>
+              <Pressable disabled={pendingTo(person.id) || pendingFrom(person.id)} onPress={() => sendRequest(person.id)} style={[styles.linkRequestButton, { backgroundColor: pendingTo(person.id) || pendingFrom(person.id) ? theme.soft : theme.inverse }]}><Text style={{ color: pendingTo(person.id) || pendingFrom(person.id) ? theme.sub : theme.inverseText, fontWeight: '800', fontSize: 12 }}>{pendingFrom(person.id) ? 'Incoming' : pendingTo(person.id) ? 'Sent' : 'LINK'}</Text></Pressable>
+            </Pressable>
+          ))}
+        </>}
       </ScrollView>
     </View>
   );
@@ -1007,13 +1063,14 @@ const styles = StyleSheet.create({
   statusBadge: { maxWidth: 190, minHeight: 29, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }, statusBadgeCompact: { minHeight: 23, paddingHorizontal: 7, paddingVertical: 4, gap: 4 }, statusBadgeText: { fontSize: 11.5, fontWeight: '900', maxWidth: 145 },
   sectionTitleRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 10 }, sectionTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -.4 },
   momentStrip: { gap: 12, paddingBottom: 10 }, momentItem: { width: 70, alignItems: 'center' }, momentRing: { width: 60, height: 60, borderRadius: 30, borderWidth: 2, alignItems: 'center', justifyContent: 'center' }, momentPlus: { position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' }, momentName: { fontSize: 10, marginTop: 6, maxWidth: 68 },
-  notesStrip: { gap: 12, paddingTop: 4, paddingBottom: 9, paddingRight: 10 }, notePerson: { width: 94, alignItems: 'center', paddingTop: 37 }, noteBubble: { position: 'absolute', top: 0, left: 2, right: 2, minHeight: 46, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 9, paddingVertical: 7, justifyContent: 'center', shadowColor: '#000', shadowOpacity: .05, shadowRadius: 9, shadowOffset: { width: 0, height: 3 } }, noteBubbleText: { fontSize: 10.5, lineHeight: 14, fontWeight: '700', textAlign: 'center' }, noteCloseIcon: { position: 'absolute', right: 5, top: 5 }, noteAvatarWrap: { position: 'relative' }, notePlus: { position: 'absolute', right: -4, bottom: -3, width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' }, noteName: { marginTop: 5, fontSize: 10, maxWidth: 90 },
+  notesStrip: { gap: 12, paddingTop: 4, paddingBottom: 9, paddingRight: 10 }, notePerson: { width: 94, alignItems: 'center', paddingTop: 37 }, noteBubble: { position: 'absolute', top: 0, left: 2, right: 2, minHeight: 46, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 9, paddingVertical: 7, justifyContent: 'center', shadowColor: '#000', shadowOpacity: .14, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, noteBubbleText: { fontSize: 10.5, lineHeight: 14, fontWeight: '700', textAlign: 'center' }, noteCloseIcon: { position: 'absolute', right: 5, top: 5 }, noteAvatarWrap: { position: 'relative' }, notePlus: { position: 'absolute', right: -4, bottom: -3, width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' }, noteName: { marginTop: 5, fontSize: 10, maxWidth: 90 },
   requestCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 12, flexDirection: 'row', gap: 12, marginBottom: 9 }, requestActions: { flexDirection: 'row', gap: 7, marginTop: 10 }, requestAccept: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 11 }, requestDecline: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 11 },
   statsRow: { flexDirection: 'row', gap: 10, marginTop: 17, marginBottom: 16 }, statCard: { flex: 1, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, padding: 16 }, statNumber: { fontSize: 24, fontWeight: '900', letterSpacing: -.8 }, statLabel: { fontSize: 12.5, marginTop: 2 },
   personRow: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 9 }, personName: { fontSize: 15.5, fontWeight: '900' }, personSub: { fontSize: 12.5, marginTop: 4 }, personSubLine: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 5 }, miniChatButton: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, metaText: { fontSize: 10.5, marginLeft: 8 },
   unreadDot: { position: 'absolute', right: 0, top: 0, width: 11, height: 11, borderRadius: 6, backgroundColor: ACCENT, borderWidth: 2, borderColor: '#fff' }, unreadCount: { minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, backgroundColor: ACCENT, alignItems: 'center', justifyContent: 'center' }, unreadCountText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   localLabCard: { marginTop: 19, borderRadius: 26, padding: 20, flexDirection: 'row', alignItems: 'center', gap: 18 }, eventTitle: { fontSize: 23, fontWeight: '900', letterSpacing: -.7, marginTop: 6 }, eventBody: { fontSize: 13, lineHeight: 19, marginTop: 7 }, eventIcon: { width: 54, height: 54, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   searchBox: { marginHorizontal: 18, height: 48, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 9, marginBottom: 7 }, searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 }, listPad: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 120 }, emptyInline: { fontSize: 12.5, paddingVertical: 16 },
+  usernameSearchHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginTop: 10, marginBottom: 12 }, usernameSearchHint: { fontSize: 11.5, lineHeight: 16, marginTop: 3, maxWidth: 280 }, searchCountBadge: { minWidth: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 }, searchCountText: { fontSize: 11, fontWeight: '900' }, searchNameRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 0 }, localBadge: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 }, localBadgeText: { fontSize: 8, fontWeight: '900', letterSpacing: .45 }, usernameResult: { fontSize: 12.5, fontWeight: '800', marginTop: 3 }, noSearchCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, minHeight: 150, padding: 22, alignItems: 'center', justifyContent: 'center' }, noSearchTitle: { fontSize: 16, fontWeight: '900', marginTop: 9 }, noSearchBody: { fontSize: 12, lineHeight: 17, textAlign: 'center', maxWidth: 260, marginTop: 5 },
   discoverRow: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 9 }, linkRequestButton: { minWidth: 62, paddingHorizontal: 12, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   linkCard: { width: '100%', borderRadius: 30, borderWidth: StyleSheet.hairlineWidth, padding: 20, alignItems: 'center' }, linkCardTop: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, linkBrand: { fontSize: 22, fontWeight: '900', letterSpacing: -.8 }, cardHint: { fontSize: 11, marginTop: 2 }, qrWrap: { padding: 14, borderRadius: 24, marginTop: 22 }, linkName: { fontSize: 25, fontWeight: '900', letterSpacing: -.7, marginTop: 17 }, linkUsername: { fontSize: 14, marginTop: 4 }, linkCardPills: { flexDirection: 'row', gap: 7, marginTop: 15, marginBottom: 2 },
   widePrimary: { width: '100%', height: 52, borderRadius: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 16 }, wideSecondary: { width: '100%', height: 52, borderRadius: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 10 },

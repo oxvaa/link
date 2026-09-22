@@ -1,4 +1,4 @@
-# LINK 0.4 — Notes, Presence & Liquid Glass
+# LINK 0.4.1 — Notes, Presence & Liquid Glass
 
 LINK is an Expo/React Native social prototype built around meeting people IRL, mutually LINKing, and continuing the conversation privately.
 
@@ -36,3 +36,9 @@ The launcher detects `OWNER/REPO` from a normal `https://OWNER.github.io/REPO/` 
 ## Local Accounts Lab
 
 The local account system is deliberately device-local so the complete social flow can be tested before adding a backend. Send a LINK request from one account, switch identity, accept it, chat from both sides, post Notes, reply to Notes, send Waves, and mark people as Close LINKs.
+
+
+## 0.4.1 hotfix
+- Notes bubbles now use fully opaque dedicated surfaces in Light and Dark mode.
+- People search now resolves @username across all profiles, including local test accounts.
+- Search results show LOCAL/LINKED state and allow opening profile, starting chat, or sending a LINK request.
