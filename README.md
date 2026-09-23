@@ -1,23 +1,15 @@
-# LINK 0.8.0 — Chat Themes & iMessage UI
+# LINK 0.9.0 — CEO & Administration
 
 GitHub → `index.html` → Generate Snack workflow.
 
-## What's new
-- Chat E2EE banner now reads only `End-to-end encrypted`.
-- Removed per-message encryption lock icons.
-- Redesigned chat header, message bubbles, metadata, typing state and composer toward a clean Apple/iMessage-style UI.
-- Per-conversation Chat Themes with live previews and subscription gating.
-- Free: Default, Red.
-- LINK Plus: Green, Race Green, Lime Green, Bright Red, Yellow.
-- LINK Pro: Cyan Green, Cyan Blue, Sunset gradient, Blue & Purple gradient, Gold, Monochromatic, Sky Blue (Classic), Rose Pink, Hot Pink, Glamurous Pink.
-- Gradient themes use `expo-linear-gradient`.
-- Existing LINK 0.7.x data migrates and keeps conversations/subscriptions.
-
-## Snack dependency added
-- `expo-linear-gradient@~57.0.2`
-
-## Test path
-1. Generate the Snack from `index.html`.
-2. Open any linked conversation.
-3. Tap the palette icon in the chat header.
-4. Select a Free theme, or activate LINK Plus/Pro to unlock premium groups.
+## New in 0.9.0
+- New switchable administrator account: `geezuz` / `@link`.
+- LINK CEO + Verified badges.
+- Admin Console: ban, unban, timed mute and unmute.
+- Banned local accounts show a suspended-account screen and can switch accounts.
+- Muted accounts cannot send messages, Notes, Moments, waves or LINK requests.
+- CEO Profile Lab: Executive Orbit, CEO Crown and Founder Aura effects.
+- Animated name effects: Prism, Executive Gold and Ice Glass.
+- GIF / animated-image profile photo picker for the CEO account.
+- CEO public fields: Instagram `<hidden>`, Spotify `<hidden>`, web `link.app/`, support `support.link.app/`.
+- Keeps all LINK 0.8.1 chat, E2EE, Silent Chat, themes, Plus and Pro functionality.
