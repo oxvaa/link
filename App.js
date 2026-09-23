@@ -33,7 +33,7 @@ import QRCode from 'react-native-qrcode-svg';
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
 const EMPTY_MESSAGES = Object.freeze([]);
-const BUILD = 'LINK 0.9.3';
+const BUILD = 'LINK 0.9.4';
 const LINK_PLUS_PLANS = {
   monthly: { id: 'monthly', label: 'Monthly', price: 79, periodLabel: 'month', bonusCoins: 400, days: 30 },
   annual: { id: 'annual', label: 'Annual', price: 649, periodLabel: 'year', bonusCoins: 1500, days: 365 },
@@ -1111,7 +1111,7 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
         <SettingsRow theme={theme} icon="eye-off-outline" title="Ghost Mode" subtitle={proActive ? 'Read messages without sending Seen receipts' : 'LINK Pro feature · upgrade to unlock'} right={<Switch disabled={!proActive} value={!!privacy.ghostMode && proActive} onValueChange={v => setPrivacy({ ...privacy, ghostMode: v })} trackColor={{ false: theme.soft, true: '#7C5CFC' }} />} last />
       </View>
       <View style={[styles.gestureTip, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="return-up-back-outline" size={20} color={ACCENT} /><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Swipe to go back</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>On detail pages, swipe right from the left edge to go back. In chat, swipe a message right to reply.</Text></View></View>
-      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.9.3 demo</Text></Pressable>
+      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.9.4 demo</Text></Pressable>
     </ScrollView>
     <AdminCustomizationModal visible={adminCustomizeOpen} onClose={() => setAdminCustomizeOpen(false)} theme={theme} profile={activeProfile} onUpdate={updateProfile} onPickGif={pickProfileGif} />
   </>);
@@ -1151,28 +1151,36 @@ function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply
     </View>
   ) : null;
 
+  const bubblePressable = (
+    <Pressable onPress={handleTap} onLongPress={handleLongPress} delayLongPress={420} style={[styles.bubblePressable, mine ? styles.outgoingPressable : styles.incomingPressable]}>
+      <View style={styles.bubbleShell}>
+        {mine
+          ? (outgoingTheme.colors.length > 1
+              ? <LinearGradient colors={outgoingTheme.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={mineBubbleStyle}>{content}</LinearGradient>
+              : <View style={[...mineBubbleStyle, { backgroundColor: outgoingTheme.colors[0] }]}>{content}</View>)
+          : <View style={incomingBubbleStyle}>{content}</View>}
+        {reactions.length ? <View style={[styles.reactionBadge, { backgroundColor: theme.elevated, borderColor: theme.border }]}><Text>{reactions.map(r => r.emoji).join(' ')}</Text></View> : null}
+      </View>
+    </Pressable>
+  );
+
   return (
     <View {...replyGesture.panHandlers} style={[styles.messageLine, groupMode && styles.groupMessageLine, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
-      {groupMode && !mine ? avatarSlot : null}
       <View style={[styles.messageStack, groupMode && styles.groupMessageStack, { alignItems: mine ? 'flex-end' : 'flex-start' }]}>
         {groupMode && showSender ? <Text style={[styles.groupSenderName, mine && styles.groupSenderNameMine, { color: theme.sub }]}>{mine ? 'You' : (sender?.name || 'LINK member')}</Text> : null}
-        <Pressable onPress={handleTap} onLongPress={handleLongPress} delayLongPress={420} style={[styles.bubblePressable, mine ? styles.outgoingPressable : styles.incomingPressable]}>
-          <View style={styles.bubbleShell}>
-            {mine
-              ? (outgoingTheme.colors.length > 1
-                  ? <LinearGradient colors={outgoingTheme.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={mineBubbleStyle}>{content}</LinearGradient>
-                  : <View style={[...mineBubbleStyle, { backgroundColor: outgoingTheme.colors[0] }]}>{content}</View>)
-              : <View style={incomingBubbleStyle}>{content}</View>}
-            {reactions.length ? <View style={[styles.reactionBadge, { backgroundColor: theme.elevated, borderColor: theme.border }]}><Text>{reactions.map(r => r.emoji).join(' ')}</Text></View> : null}
+        {groupMode ? (
+          <View style={[styles.groupBubbleRow, mine ? styles.groupBubbleRowOutgoing : styles.groupBubbleRowIncoming]}>
+            {!mine ? avatarSlot : null}
+            {bubblePressable}
+            {mine ? avatarSlot : null}
           </View>
-        </Pressable>
+        ) : bubblePressable}
         {showMeta ? <View style={[styles.messageMetaOutside, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
           {message.expiresAt ? <Ionicons name="timer-outline" size={10} color={theme.sub} /> : null}
           <Text style={[styles.bubbleTime, { color: theme.sub }]}>{message.time}</Text>
           {mine ? <Ionicons name={message.readBy?.length > 1 ? 'checkmark-done' : 'checkmark'} size={12} color={outgoingTheme.colors[0]} /> : null}
         </View> : <View style={styles.groupMessageTightSpacer} />}
       </View>
-      {groupMode && mine ? avatarSlot : null}
     </View>
   );
 }
@@ -2284,7 +2292,7 @@ ${text}` });
     mutate(prev => ({ ...prev, chatThemeScopes: { ...(prev.chatThemeScopes || {}), [activeThreadKey]: scope === 'full' ? 'full' : 'messages' } }));
   };
 
-  const resetDemo = () => Alert.alert('Reset LINK 0.9.3?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(await migrateConversationEncryption(initialData())); setActiveChatId(null); setActiveGroupId(null); setTab('home'); } }]);
+  const resetDemo = () => Alert.alert('Reset LINK 0.9.4?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(await migrateConversationEncryption(initialData())); setActiveChatId(null); setActiveGroupId(null); setTab('home'); } }]);
 
   if (!hydrated || !activeProfile) return <View style={[styles.loading, { backgroundColor: light.bg }]}><View style={styles.loadingLogo}><Text style={styles.loadingLogoText}>L*</Text></View><Text style={{ fontWeight: '900', color: light.text, fontSize: 17 }}>LINK</Text><Text style={{ color: light.sub, fontSize: 12 }}>{BUILD}</Text></View>;
 
@@ -2385,7 +2393,7 @@ const styles = StyleSheet.create({
   settingsCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, overflow: 'hidden' }, settingsRow: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 14 }, settingsIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, settingsTitle: { fontWeight: '900', fontSize: 14 }, settingsSub: { fontSize: 11.5, lineHeight: 16, marginTop: 2 }, resetButton: { marginTop: 22, marginBottom: 18, height: 48, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   tabBarShell: { height: Platform.OS === 'ios' ? 88 : 80, paddingHorizontal: 13, paddingTop: 5, paddingBottom: Platform.OS === 'ios' ? 8 : 6, backgroundColor: 'transparent' }, tabGlass: { flex: 1, borderRadius: 27, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', shadowOpacity: .14, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 12 }, tabInner: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 5 }, tabItem: { flex: 1, height: 58, alignItems: 'center', justifyContent: 'center' }, tabActiveCapsule: { minWidth: 54, minHeight: 48, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 6 }, tabLabel: { fontSize: 8.5, fontWeight: '800', letterSpacing: -.1 }, centerTabGlass: { width: 48, height: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: .18, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } }, glassHighlight: { position: 'absolute', left: 18, right: 18, top: 1, height: 1, borderRadius: 999, opacity: .8 },
   chatHeader: { height: 78, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, overflow: 'hidden' }, chatHeaderSide: { width: 88, flexDirection: 'row', alignItems: 'center' }, chatHeaderRight: { justifyContent: 'flex-end', gap: 3 }, chatHeaderPersonCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 }, chatHeaderIdentity: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 150 }, chatHeaderName: { fontWeight: '800', fontSize: 12.5, letterSpacing: -.2 }, chatHeaderStatus: { fontSize: 10.5, marginTop: 2, fontWeight: '800' }, metContext: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, marginTop: 8 }, metContextText: { fontSize: 10.5, fontWeight: '700' },
-  chatBody: { flex: 1, overflow: 'hidden' }, messageList: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 20, flexGrow: 1 }, messageLine: { flexDirection: 'row', marginVertical: 2.5 }, groupMessageLine: { alignItems: 'flex-end', marginVertical: 1.2 }, messageStack: { maxWidth: '84%' }, groupMessageStack: { maxWidth: '78%' }, groupMessageAvatarSlot: { width: 32, minHeight: 28, justifyContent: 'flex-end' }, groupMessageAvatarLeft: { alignItems: 'flex-start', marginRight: 5 }, groupMessageAvatarRight: { alignItems: 'flex-end', marginLeft: 5 }, groupMessageTightSpacer: { height: 1 }, bubblePressable: { position: 'relative' }, incomingPressable: { paddingLeft: 4 }, outgoingPressable: { paddingRight: 4 }, bubbleShell: { position: 'relative' }, bubble: { borderRadius: 22, paddingHorizontal: 16, paddingTop: 10.5, paddingBottom: 10.5, overflow: 'hidden', minHeight: 42, justifyContent: 'center' }, outgoingBubble: { borderRadius: 22 }, incomingBubble: { borderRadius: 22 }, outgoingTail: { display: 'none' }, incomingTail: { display: 'none' }, bubbleText: { fontSize: 17, lineHeight: 22.5, letterSpacing: -.2 }, messageMetaOutside: { minHeight: 16, flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, paddingHorizontal: 10 }, bubbleTime: { fontSize: 10, fontWeight: '600' }, replyQuote: { borderLeftWidth: 2, paddingLeft: 7, marginBottom: 7, maxWidth: 220 }, groupSenderName: { fontSize: 11, fontWeight: '800', marginLeft: 10, marginBottom: 4, marginTop: 8 }, groupSenderNameMine: { marginLeft: 0, marginRight: 10 }, reactionBadge: { position: 'absolute', bottom: -12, right: 7, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, borderWidth: StyleSheet.hairlineWidth, shadowColor: '#000', shadowOpacity: .08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  chatBody: { flex: 1, overflow: 'hidden' }, messageList: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 20, flexGrow: 1 }, messageLine: { flexDirection: 'row', marginVertical: 2.5 }, groupMessageLine: { marginVertical: 1.2 }, messageStack: { maxWidth: '84%' }, groupMessageStack: { maxWidth: '86%' }, groupBubbleRow: { flexDirection: 'row', alignItems: 'flex-end' }, groupBubbleRowIncoming: { justifyContent: 'flex-start' }, groupBubbleRowOutgoing: { justifyContent: 'flex-end' }, groupMessageAvatarSlot: { width: 32, height: 32, justifyContent: 'flex-end', alignItems: 'center', flexShrink: 0 }, groupMessageAvatarLeft: { marginRight: 6 }, groupMessageAvatarRight: { marginLeft: 6 }, groupMessageTightSpacer: { height: 1 }, bubblePressable: { position: 'relative' }, incomingPressable: { paddingLeft: 4 }, outgoingPressable: { paddingRight: 4 }, bubbleShell: { position: 'relative' }, bubble: { borderRadius: 22, paddingHorizontal: 16, paddingTop: 10.5, paddingBottom: 10.5, overflow: 'hidden', minHeight: 42, justifyContent: 'center' }, outgoingBubble: { borderRadius: 22 }, incomingBubble: { borderRadius: 22 }, outgoingTail: { display: 'none' }, incomingTail: { display: 'none' }, bubbleText: { fontSize: 17, lineHeight: 22.5, letterSpacing: -.2 }, messageMetaOutside: { minHeight: 16, flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, paddingHorizontal: 10 }, bubbleTime: { fontSize: 10, fontWeight: '600' }, replyQuote: { borderLeftWidth: 2, paddingLeft: 7, marginBottom: 7, maxWidth: 220 }, groupSenderName: { fontSize: 11, fontWeight: '800', marginLeft: 42, marginBottom: 4, marginTop: 8 }, groupSenderNameMine: { marginLeft: 0, marginRight: 42, textAlign: 'right' }, reactionBadge: { position: 'absolute', bottom: -12, right: 7, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, borderWidth: StyleSheet.hairlineWidth, shadowColor: '#000', shadowOpacity: .08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   photoMessage: { width: 205, height: 154, borderRadius: 17, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, photoMessageImage: { width: '100%', height: '100%' }, voiceMessage: { width: 205, flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 3 }, voicePlay: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   emptyChat: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 120 }, emptyChatIcon: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }, typingLine: { paddingHorizontal: 16, paddingBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 7 }, typingBubble: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 }, replyComposerBar: { marginHorizontal: 10, marginBottom: 4, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
   composerWrap: { flexDirection: 'row', gap: 8, alignItems: 'flex-end', paddingHorizontal: 10, paddingTop: 7, paddingBottom: Platform.OS === 'ios' ? 7 : 10 }, plusButton: { width: 40, height: 40, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', marginBottom: 1 }, composer: { flex: 1, minHeight: 42, maxHeight: 120, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 14, paddingRight: 5, paddingVertical: 4 }, composerInput: { flex: 1, fontSize: 15.5, maxHeight: 100, paddingTop: 7, paddingBottom: 7, letterSpacing: -.1 }, sendButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 5, marginBottom: 1 },
