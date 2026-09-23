@@ -25,21 +25,100 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { BlurView } from 'expo-blur';
+import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
-const BUILD = 'LINK 0.6.1';
+const EMPTY_MESSAGES = Object.freeze([]);
+const BUILD = 'LINK 0.7.0';
 const LINK_PLUS_PLANS = {
   monthly: { id: 'monthly', label: 'Monthly', price: 79, periodLabel: 'month', bonusCoins: 400, days: 30 },
   annual: { id: 'annual', label: 'Annual', price: 649, periodLabel: 'year', bonusCoins: 1500, days: 365 },
 };
 const LINK_PLUS_SHOP_DISCOUNT = 0.15;
+const LINK_PRO_PLANS = {
+  monthly: { id: 'monthly', label: 'Monthly', price: 149, periodLabel: 'month', bonusCoins: 900, days: 30 },
+  annual: { id: 'annual', label: 'Annual', price: 1190, periodLabel: 'year', bonusCoins: 4500, days: 365 },
+};
+const LINK_PRO_SHOP_DISCOUNT = 0.30;
+const SILENT_TIMER_OPTIONS = [
+  { seconds: 30, label: '30 sec' },
+  { seconds: 5 * 60, label: '5 min' },
+  { seconds: 60 * 60, label: '1 hour' },
+  { seconds: 24 * 60 * 60, label: '24 hours' },
+];
+const PRO_SILENT_TIMER_OPTIONS = [
+  { seconds: 10, label: '10 sec' },
+  { seconds: 7 * 24 * 60 * 60, label: '7 days' },
+];
 const PLUS_STATUS_COLORS = ['#FFD60A', '#64D2FF', '#BF5AF2', '#FF375F', '#30D158'];
 const PLUS_STATUS_ICONS = ['diamond', 'planet', 'rocket', 'skull', 'rose'];
 const subscriptionIsActive = (sub) => !!(sub?.active && (!sub.expiresAt || sub.expiresAt > Date.now()));
-const discountedEffectPrice = (price, plusActive) => plusActive ? Math.max(1, Math.round(price * (1 - LINK_PLUS_SHOP_DISCOUNT))) : price;
+const discountedEffectPrice = (price, plusActive, proActive = false) => {
+  const discount = proActive ? LINK_PRO_SHOP_DISCOUNT : plusActive ? LINK_PLUS_SHOP_DISCOUNT : 0;
+  return Math.max(1, Math.round(price * (1 - discount)));
+};
+const formatSilentTimer = (seconds = 0) => {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)}d`;
+};
+const utf8ToBytes = (value = '') => {
+  const encoded = unescape(encodeURIComponent(String(value)));
+  return Uint8Array.from(encoded, ch => ch.charCodeAt(0));
+};
+const bytesToUtf8 = (bytes) => decodeURIComponent(escape(String.fromCharCode(...Array.from(bytes || []))));
+const createThreadKey = async () => {
+  const key = await AESEncryptionKey.generate();
+  return key.encoded('base64');
+};
+const encryptMessageContent = async (content, keyBase64) => {
+  const key = await AESEncryptionKey.import(keyBase64, 'base64');
+  const sealed = await aesEncryptAsync(utf8ToBytes(JSON.stringify(content)), key);
+  return sealed.combined('base64');
+};
+const decryptMessageContent = async (cipher, keyBase64) => {
+  if (!cipher || !keyBase64) return null;
+  const key = await AESEncryptionKey.import(keyBase64, 'base64');
+  const sealed = AESSealedData.fromCombined(cipher);
+  const bytes = await aesDecryptAsync(sealed, key, { output: 'bytes' });
+  return JSON.parse(bytesToUtf8(bytes));
+};
+const decryptConversation = async (messages = [], keyBase64) => Promise.all(messages.map(async message => {
+  if (!message?.cipher) return message;
+  try {
+    const content = await decryptMessageContent(message.cipher, keyBase64);
+    return { ...message, ...(content || {}), encrypted: true };
+  } catch {
+    return { ...message, text: 'Unable to decrypt this message', uri: null, duration: null, decryptError: true, encrypted: true };
+  }
+}));
+const migrateConversationEncryption = async (source) => {
+  const chatKeys = { ...(source.chatKeys || {}) };
+  const conversations = {};
+  for (const [key, list] of Object.entries(source.conversations || {})) {
+    let keyBase64 = chatKeys[key];
+    if (!keyBase64) {
+      keyBase64 = await createThreadKey();
+      chatKeys[key] = keyBase64;
+    }
+    const nextList = [];
+    for (const message of list || []) {
+      if (message?.cipher) {
+        nextList.push({ ...message, encrypted: true, seenBy: message.seenBy || message.readBy || [] });
+        continue;
+      }
+      const cipher = await encryptMessageContent({ text: message.text || '', uri: message.uri || null, duration: message.duration || null }, keyBase64);
+      const { text, uri, duration, ...rest } = message;
+      nextList.push({ ...rest, cipher, encrypted: true, seenBy: message.seenBy || message.readBy || [] });
+    }
+    conversations[key] = nextList;
+  }
+  return { ...source, chatKeys, conversations };
+};
 
 const light = {
   bg: '#F6F7FB', card: '#FFFFFF', elevated: '#FFFFFF', text: '#111318', sub: '#6F7582',
@@ -114,7 +193,7 @@ function initialData() {
   const keySD = threadKey('local_simi', 'demo_david');
 
   return {
-    version: 6,
+    version: 7,
     themeSetting: 'light',
     activeAccountId: 'local_simi',
     localAccountIds: ['local_simi', 'local_nela', 'local_alex'],
@@ -159,9 +238,9 @@ function initialData() {
       demo_david: [],
     },
     privacy: {
-      local_simi: { showStatus: true, showSocials: true, momentsToLinks: true },
-      local_nela: { showStatus: true, showSocials: true, momentsToLinks: true },
-      local_alex: { showStatus: true, showSocials: false, momentsToLinks: true },
+      local_simi: { showStatus: true, showSocials: true, momentsToLinks: true, ghostMode: false },
+      local_nela: { showStatus: true, showSocials: true, momentsToLinks: true, ghostMode: false },
+      local_alex: { showStatus: true, showSocials: false, momentsToLinks: true, ghostMode: false },
     },
     wallets: {
       local_simi: 2200,
@@ -177,6 +256,18 @@ function initialData() {
       local_simi: null,
       local_nela: null,
       local_alex: null,
+    },
+    proSubscriptions: {
+      local_simi: null,
+      local_nela: null,
+      local_alex: null,
+    },
+    chatKeys: {},
+    silentChats: {},
+    profileViews: {
+      local_simi: 12,
+      local_nela: 8,
+      local_alex: 3,
     },
   };
 }
@@ -272,6 +363,13 @@ function PlusBadge({ compact = false }) {
   return <View style={[styles.plusBadge, compact && styles.plusBadgeCompact]}>
     <Ionicons name="sparkles" size={compact ? 10 : 12} color="#fff" />
     <Text style={[styles.plusBadgeText, compact && { fontSize: 9 }]}>PLUS</Text>
+  </View>;
+}
+
+function ProBadge({ compact = false }) {
+  return <View style={[styles.proBadge, compact && styles.plusBadgeCompact]}>
+    <Ionicons name="diamond" size={compact ? 10 : 12} color="#fff" />
+    <Text style={[styles.plusBadgeText, compact && { fontSize: 9 }]}>PRO</Text>
   </View>;
 }
 
@@ -397,7 +495,7 @@ function PersonRow({ person, theme, onPress, onChat, unread = 0, favorite = fals
 function HomeScreen({ theme, activeProfile, connectedProfiles, conversations, activeId, requests, notifications, moments, notes, profiles, favorites, favoriteIds, openOwnCard, openScanner, openChat, openAccountSwitcher, openNotifications, onAccept, onDecline, onCreateMoment, onOpenMoment, onOwnNote, onOpenNote, setTab }) {
   const unreadNotifs = (notifications[activeId] || []).filter(n => !n.read).length;
   const visibleMomentOwners = [activeId, ...connectedProfiles.map(p => p.id)];
-  const unreadFor = (personId) => (conversations[threadKey(activeId, personId)] || []).filter(m => !m.readBy?.includes(activeId) && m.senderId !== activeId).length;
+  const unreadFor = (personId) => (conversations[threadKey(activeId, personId)] || []).filter(m => !(m.seenBy || m.readBy || []).includes(activeId) && m.senderId !== activeId).length;
 
   return (
     <ScrollView contentContainerStyle={styles.screenScroll} showsVerticalScrollIndicator={false}>
@@ -571,18 +669,18 @@ function ChatsScreen({ theme, activeId, profiles, connectedIds, conversations, f
     const person = profiles[id];
     const convo = conversations[threadKey(activeId, id)] || [];
     const last = convo[convo.length - 1];
-    const unread = convo.filter(m => !m.readBy?.includes(activeId) && m.senderId !== activeId).length;
+    const unread = convo.filter(m => !(m.seenBy || m.readBy || []).includes(activeId) && m.senderId !== activeId).length;
     return { person, last, unread, favorite: favoriteIds.includes(id) };
   }).filter(x => x.person).sort((a, b) => Number(b.favorite) - Number(a.favorite) || (b.last?.id || '').localeCompare(a.last?.id || ''));
 
   return (
     <View style={styles.flexOne}>
-      <View style={styles.simpleHeader}><Text style={[styles.bigTitle, { color: theme.text }]}>Chats</Text><Text style={[styles.headerSub, { color: theme.sub }]}>No random DMs. Only people you LINK.</Text></View>
+      <View style={styles.simpleHeader}><Text style={[styles.bigTitle, { color: theme.text }]}>Chats</Text><Text style={[styles.headerSub, { color: theme.sub }]}>Only your LINKs · encrypted by default.</Text></View>
       <FlatList data={rows} keyExtractor={x => x.person.id} contentContainerStyle={styles.listPad} showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
           <Pressable onPress={() => openChat(item.person)} style={({ pressed }) => [styles.chatRow, { borderBottomColor: theme.border, opacity: pressed ? .72 : 1 }]}> 
             <View><Avatar person={item.person} size={52} theme={theme} />{item.unread ? <View style={styles.unreadDot} /> : null}</View>
-            <View style={{ flex: 1, minWidth: 0 }}><View style={styles.rowBetween}><View style={styles.inlineNameRow}><Text style={[styles.personName, { color: theme.text }]}>{item.person.name}</Text>{item.favorite ? <Ionicons name="star" size={13} color={ACCENT} /> : null}</View><Text style={[styles.metaText, { color: theme.sub }]}>{item.last?.time || ''}</Text></View><Text numberOfLines={1} style={[styles.chatPreview, { color: item.unread ? theme.text : theme.sub, fontWeight: item.unread ? '700' : '400' }]}>{item.last ? `${item.last.senderId === activeId ? 'You: ' : ''}${item.last.type === 'text' ? item.last.text : item.last.type === 'photo' ? '📷 Photo' : '🎙 Voice message'}` : 'Start the conversation'}</Text></View>
+            <View style={{ flex: 1, minWidth: 0 }}><View style={styles.rowBetween}><View style={styles.inlineNameRow}><Text style={[styles.personName, { color: theme.text }]}>{item.person.name}</Text>{item.favorite ? <Ionicons name="star" size={13} color={ACCENT} /> : null}</View><Text style={[styles.metaText, { color: theme.sub }]}>{item.last?.time || ''}</Text></View><Text numberOfLines={1} style={[styles.chatPreview, { color: item.unread ? theme.text : theme.sub, fontWeight: item.unread ? '700' : '400' }]}>{item.last ? `${item.last.senderId === activeId ? 'You: ' : ''}${item.last.type === 'text' ? (item.last.text || (item.last.cipher ? '🔒 Encrypted message' : 'Message')) : item.last.type === 'photo' ? '📷 Encrypted photo' : '🎙 Encrypted voice message'}` : 'Start the conversation'}</Text></View>
             {item.unread ? <View style={styles.unreadCount}><Text style={styles.unreadCountText}>{item.unread}</Text></View> : null}
           </Pressable>
         )}
@@ -600,9 +698,10 @@ function SettingsRow({ theme, icon, title, subtitle, right, last = false }) {
   return <View style={[styles.settingsRow, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}><View style={[styles.settingsIcon, { backgroundColor: theme.soft }]}><Ionicons name={icon} size={18} color={theme.text} /></View><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{subtitle}</Text></View>{right}</View>;
 }
 
-function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setThemeSetting, privacy, setPrivacy, openAccountSwitcher, openCustomStatus, openShop, openPlus, plusSubscription, resetDemo }) {
+function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setThemeSetting, privacy, setPrivacy, openAccountSwitcher, openCustomStatus, openShop, openPlus, plusSubscription, openPro, proSubscription, insights, resetDemo }) {
   const [editing, setEditing] = useState(false);
-  const plusActive = subscriptionIsActive(plusSubscription);
+  const proActive = subscriptionIsActive(proSubscription);
+  const plusActive = subscriptionIsActive(plusSubscription) || proActive;
   const [draft, setDraft] = useState(activeProfile);
   useEffect(() => setDraft(activeProfile), [activeProfile]);
   const save = () => {
@@ -648,13 +747,31 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
           <TextInput value={draft.bio} onChangeText={bio => setDraft({ ...draft, bio })} placeholder="Short bio" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
           <TextInput value={draft.socials?.instagram || ''} onChangeText={instagram => setDraft({ ...draft, socials: { ...(draft.socials || {}), instagram } })} autoCapitalize="none" placeholder="Instagram @handle" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
           <TextInput value={draft.socials?.spotify || ''} onChangeText={spotify => setDraft({ ...draft, socials: { ...(draft.socials || {}), spotify } })} placeholder="Spotify name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} />
-        </View> : <><View style={styles.profileNameWithBadge}><Text style={[styles.profileName, { color: theme.text }]}>{activeProfile.name}</Text>{plusActive ? <PlusBadge /> : null}</View><Text style={[styles.profileUser, { color: theme.sub }]}>{activeProfile.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{activeProfile.bio}</Text><StatusBadge person={activeProfile} theme={theme} /></>}
+        </View> : <><View style={styles.profileNameWithBadge}><Text style={[styles.profileName, { color: theme.text }]}>{activeProfile.name}</Text>{proActive ? <ProBadge /> : plusActive ? <PlusBadge /> : null}</View><Text style={[styles.profileUser, { color: theme.sub }]}>{activeProfile.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{activeProfile.bio}</Text><StatusBadge person={activeProfile} theme={theme} /></>}
       </View>
 
-      <SectionTitle theme={theme} action={plusActive ? 'Manage' : 'See plans'} onAction={openPlus}>LINK Plus</SectionTitle>
+      <SectionTitle theme={theme} action={proActive ? 'Manage' : 'See plans'} onAction={openPro}>LINK Pro</SectionTitle>
+      <Pressable onPress={openPro} style={[styles.proEntryCard, { backgroundColor: proActive ? '#111318' : theme.card, borderColor: proActive ? '#111318' : theme.border }]}>
+        <View style={[styles.proEntryIcon, { backgroundColor: proActive ? '#7C5CFC' : '#111318' }]}><Ionicons name="diamond" size={22} color="#fff" /></View>
+        <View style={{ flex: 1 }}><View style={styles.inlineNameRow}><Text style={[styles.settingsTitle, { color: proActive ? '#fff' : theme.text }]}>{proActive ? 'LINK Pro is active' : 'Unlock LINK Pro'}</Text>{proActive ? <ProBadge compact /> : null}</View><Text style={[styles.settingsSub, { color: proActive ? 'rgba(255,255,255,.66)' : theme.sub }]}>{proActive ? `${proSubscription?.trial ? '7-day trial · ' : ''}${proSubscription?.plan === 'annual' ? 'Annual' : 'Monthly'} · Pro tools unlocked` : 'Ghost Mode, 7-day Notes, Profile Insights, 30% Shop savings & more'}</Text></View>
+        <Ionicons name="chevron-forward" size={20} color={proActive ? '#fff' : theme.sub} />
+      </Pressable>
+
+      {proActive ? <>
+        <SectionTitle theme={theme}>Pro Insights</SectionTitle>
+        <View style={[styles.insightsCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.insightItem}><Text style={[styles.insightValue, { color: theme.text }]}>{insights?.views || 0}</Text><Text style={[styles.insightLabel, { color: theme.sub }]}>Profile views</Text></View>
+          <View style={[styles.insightDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.insightItem}><Text style={[styles.insightValue, { color: theme.text }]}>{insights?.links || 0}</Text><Text style={[styles.insightLabel, { color: theme.sub }]}>LINKs</Text></View>
+          <View style={[styles.insightDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.insightItem}><Text style={[styles.insightValue, { color: theme.text }]}>{insights?.messages || 0}</Text><Text style={[styles.insightLabel, { color: theme.sub }]}>Messages sent</Text></View>
+        </View>
+      </> : null}
+
+      <SectionTitle theme={theme} action={plusActive ? (proActive ? 'Included' : 'Manage') : 'See plans'} onAction={proActive ? openPro : openPlus}>LINK Plus</SectionTitle>
       <Pressable onPress={openPlus} style={[styles.plusEntryCard, { backgroundColor: plusActive ? theme.inverse : theme.card, borderColor: plusActive ? theme.inverse : theme.border }]}>
         <View style={[styles.plusEntryIcon, { backgroundColor: plusActive ? theme.inverseText : '#111318' }]}><Ionicons name="sparkles" size={22} color={plusActive ? theme.inverse : '#fff'} /></View>
-        <View style={{ flex: 1 }}><View style={styles.inlineNameRow}><Text style={[styles.settingsTitle, { color: plusActive ? theme.inverseText : theme.text }]}>{plusActive ? 'LINK Plus is active' : 'Upgrade to LINK Plus'}</Text>{plusActive ? <PlusBadge compact /> : null}</View><Text style={[styles.settingsSub, { color: plusActive ? theme.inverseText : theme.sub, opacity: plusActive ? .68 : 1 }]}>{plusActive ? `${plusSubscription?.plan === 'annual' ? 'Annual' : 'Monthly'} plan · premium perks unlocked` : 'From 54 Kč/month on annual · better Notes, Shop savings & more'}</Text></View>
+        <View style={{ flex: 1 }}><View style={styles.inlineNameRow}><Text style={[styles.settingsTitle, { color: plusActive ? theme.inverseText : theme.text }]}>{proActive ? 'LINK Plus included with Pro' : plusActive ? 'LINK Plus is active' : 'Upgrade to LINK Plus'}</Text>{plusActive ? <PlusBadge compact /> : null}</View><Text style={[styles.settingsSub, { color: plusActive ? theme.inverseText : theme.sub, opacity: plusActive ? .68 : 1 }]}>{proActive ? 'All LINK Plus perks are included in your Pro plan' : plusActive ? `${plusSubscription?.plan === 'annual' ? 'Annual' : 'Monthly'} plan · premium perks unlocked` : 'From 54 Kč/month on annual · better Notes, Shop savings & more'}</Text></View>
         <Ionicons name="chevron-forward" size={20} color={plusActive ? theme.inverseText : theme.sub} />
       </Pressable>
 
@@ -683,10 +800,11 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
       <View style={[styles.settingsCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <SettingsRow theme={theme} icon="pulse-outline" title="Share status" subtitle="Linked people can see your current status" right={<Switch value={privacy.showStatus} onValueChange={v => setPrivacy({ ...privacy, showStatus: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} />
         <SettingsRow theme={theme} icon="logo-instagram" title="Show socials" subtitle="Display social handles on your profile" right={<Switch value={privacy.showSocials} onValueChange={v => setPrivacy({ ...privacy, showSocials: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} />
-        <SettingsRow theme={theme} icon="aperture-outline" title="Moments to LINKs" subtitle="Only linked people can see your Moments" right={<Switch value={privacy.momentsToLinks} onValueChange={v => setPrivacy({ ...privacy, momentsToLinks: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} last />
+        <SettingsRow theme={theme} icon="aperture-outline" title="Moments to LINKs" subtitle="Only linked people can see your Moments" right={<Switch value={privacy.momentsToLinks} onValueChange={v => setPrivacy({ ...privacy, momentsToLinks: v })} trackColor={{ false: theme.soft, true: ACCENT }} />} />
+        <SettingsRow theme={theme} icon="eye-off-outline" title="Ghost Mode" subtitle={proActive ? 'Read messages without sending Seen receipts' : 'LINK Pro feature · upgrade to unlock'} right={<Switch disabled={!proActive} value={!!privacy.ghostMode && proActive} onValueChange={v => setPrivacy({ ...privacy, ghostMode: v })} trackColor={{ false: theme.soft, true: '#7C5CFC' }} />} last />
       </View>
       <View style={[styles.gestureTip, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="return-up-back-outline" size={20} color={ACCENT} /><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Swipe to go back</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>On detail pages, swipe right from the left edge to go back. In chat, swipe a message right to reply.</Text></View></View>
-      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.6.1 demo</Text></Pressable>
+      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.7.0 demo</Text></Pressable>
     </ScrollView>
   );
 }
@@ -703,14 +821,14 @@ function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply
       <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? { backgroundColor: ACCENT } : { backgroundColor: theme.card, borderColor: theme.border, borderWidth: StyleSheet.hairlineWidth }]}> 
         {quoted ? <View style={[styles.replyQuote, { borderLeftColor: mine ? 'rgba(255,255,255,.7)' : ACCENT }]}><Text numberOfLines={1} style={{ color: mine ? 'rgba(255,255,255,.78)' : theme.sub, fontSize: 11, fontWeight: '700' }}>{quoted.type === 'text' ? quoted.text : quoted.type === 'photo' ? '📷 Photo' : '🎙 Voice message'}</Text></View> : null}
         {message.type === 'photo' ? <View style={[styles.photoMessage, { backgroundColor: mine ? 'rgba(255,255,255,.15)' : theme.soft }]}>{message.uri ? <Image source={{ uri: message.uri }} style={styles.photoMessageImage} /> : <><Ionicons name="image-outline" size={28} color={mine ? '#fff' : theme.text} /><Text style={{ color: mine ? '#fff' : theme.text, fontWeight: '800', marginTop: 7 }}>Photo</Text></>}</View> : message.type === 'voice' ? <View style={styles.voiceMessage}><Ionicons name="play" size={18} color={mine ? '#fff' : theme.text} /><View style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: mine ? 'rgba(255,255,255,.45)' : theme.border }} /><Text style={{ color: mine ? '#fff' : theme.text, fontSize: 11, fontWeight: '700' }}>{message.duration || '0:08'}</Text></View> : <Text style={[styles.bubbleText, { color: mine ? '#fff' : theme.text }]}>{message.text}</Text>}
-        <View style={styles.messageMeta}><Text style={[styles.bubbleTime, { color: mine ? 'rgba(255,255,255,.68)' : theme.sub }]}>{message.time}</Text>{mine ? <Ionicons name={message.readBy?.length > 1 ? 'checkmark-done' : 'checkmark'} size={12} color="rgba(255,255,255,.7)" /> : null}</View>
+        <View style={styles.messageMeta}>{message.encrypted ? <Ionicons name="lock-closed" size={9} color={mine ? 'rgba(255,255,255,.58)' : theme.sub} /> : null}{message.expiresAt ? <Ionicons name="timer-outline" size={10} color={mine ? 'rgba(255,255,255,.62)' : theme.sub} /> : null}<Text style={[styles.bubbleTime, { color: mine ? 'rgba(255,255,255,.68)' : theme.sub }]}>{message.time}</Text>{mine ? <Ionicons name={message.readBy?.length > 1 ? 'checkmark-done' : 'checkmark'} size={12} color="rgba(255,255,255,.7)" /> : null}</View>
         {reactions.length ? <View style={[styles.reactionBadge, { backgroundColor: theme.elevated }]}><Text>{reactions.map(r => r.emoji).join(' ')}</Text></View> : null}
       </Pressable>
     </View>
   );
 }
 
-function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, onSend, onReact, onDelete, onOpenProfile, markRead }) {
+function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, onSend, onReact, onDelete, onOpenProfile, markRead, silentConfig, onOpenSilent, onOpenEncryptionInfo }) {
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
   const [typing, setTyping] = useState(false);
@@ -750,15 +868,16 @@ function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, 
     <EdgeSwipeBack onBack={onBack}>
     <KeyboardAvoidingView style={[styles.flexOne, { backgroundColor: theme.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.flexOne}>
-        <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}><IconButton icon="chevron-back" onPress={onBack} theme={theme} /><Pressable onPress={() => onOpenProfile(person)} style={styles.chatHeaderPerson}><Avatar person={person} size={38} theme={theme} /><View><Text style={[styles.chatHeaderName, { color: theme.text }]}>{person.name}</Text><View style={{ marginTop: 3 }}><StatusBadge person={person} theme={theme} compact /></View></View></Pressable><IconButton icon="videocam-outline" onPress={() => Alert.alert('LINK Call', 'Voice & video calling UI is reserved for a future backend build.')} theme={theme} /></View>
-        <View style={[styles.metContext, { backgroundColor: theme.soft }]}><Ionicons name="link" size={14} color={theme.sub} /><Text style={[styles.metContextText, { color: theme.sub }]}>Mutual LINK · private conversation</Text></View>
+        <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}><IconButton icon="chevron-back" onPress={onBack} theme={theme} /><Pressable onPress={() => onOpenProfile(person)} style={styles.chatHeaderPerson}><Avatar person={person} size={38} theme={theme} /><View><Text style={[styles.chatHeaderName, { color: theme.text }]}>{person.name}</Text><View style={{ marginTop: 3 }}><StatusBadge person={person} theme={theme} compact /></View></View></Pressable><IconButton icon={silentConfig?.enabled ? "timer" : "timer-outline"} onPress={onOpenSilent} theme={theme} filled={!!silentConfig?.enabled} /></View>
+        <Pressable onPress={onOpenEncryptionInfo} style={[styles.metContext, { backgroundColor: theme.soft }]}><Ionicons name="lock-closed" size={13} color={theme.success} /><Text style={[styles.metContextText, { color: theme.sub }]}>End-to-end encrypted · local prototype</Text><Ionicons name="information-circle-outline" size={13} color={theme.sub} /></Pressable>
+        {silentConfig?.enabled ? <Pressable onPress={onOpenSilent} style={[styles.silentBanner, { backgroundColor: 'rgba(108,92,231,.12)' }]}><Ionicons name="timer" size={14} color={ACCENT} /><Text style={[styles.silentBannerText, { color: ACCENT }]}>Silent Chat · new messages disappear after {formatSilentTimer(silentConfig.timerSeconds)}</Text><Ionicons name="chevron-forward" size={13} color={ACCENT} /></Pressable> : null}
         <FlatList ref={listRef} data={messages} keyExtractor={m => m.id} contentContainerStyle={styles.messageList} showsVerticalScrollIndicator={false} onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: false })}
           renderItem={({ item }) => <ChatMessage message={item} mine={item.senderId === activeProfile.id} theme={theme} profiles={profiles} quoted={messages.find(x => x.id === item.replyTo)} onSwipeReply={() => setReplyTo(item)} onLongPress={() => longPress(item)} />}
           ListEmptyComponent={<View style={styles.emptyChat}><Ionicons name="sparkles-outline" size={30} color={ACCENT} /><Text style={[styles.emptyTitle, { color: theme.text }]}>New LINK</Text><Text style={[styles.emptyBody, { color: theme.sub }]}>Say hi to {person.name.split(' ')[0]}.</Text></View>}
         />
         {typing ? <View style={styles.typingLine}><View style={[styles.typingBubble, { backgroundColor: theme.card }]}><Text style={{ color: theme.sub, letterSpacing: 2 }}>•••</Text></View><Text style={{ color: theme.sub, fontSize: 10 }}>{person.name.split(' ')[0]} is typing</Text></View> : null}
         {replyTo ? <View style={[styles.replyComposerBar, { backgroundColor: theme.soft }]}><View style={{ flex: 1 }}><Text style={{ color: ACCENT, fontWeight: '800', fontSize: 11 }}>Replying to {replyTo.senderId === activeProfile.id ? 'yourself' : profiles[replyTo.senderId]?.name}</Text><Text numberOfLines={1} style={{ color: theme.sub, fontSize: 12 }}>{replyTo.type === 'text' ? replyTo.text : replyTo.type}</Text></View><Pressable onPress={() => setReplyTo(null)}><Ionicons name="close" size={19} color={theme.sub} /></Pressable></View> : null}
-        <View style={[styles.composerWrap, { borderTopColor: theme.border, backgroundColor: theme.bg }]}><Pressable style={[styles.plusButton, { backgroundColor: theme.soft }]} onPress={() => Alert.alert('Send', 'Choose a local demo attachment.', [{ text: 'Photo', onPress: pickChatPhoto }, { text: 'Voice message', onPress: () => send({ type: 'voice', text: '', duration: '0:08' }) }, { text: 'Cancel', style: 'cancel' }])}><Ionicons name="add" size={24} color={theme.text} /></Pressable><View style={[styles.composer, { backgroundColor: theme.input }]}><TextInput value={text} onChangeText={setText} placeholder={`Message ${person.name.split(' ')[0]}`} placeholderTextColor={theme.sub} style={[styles.composerInput, { color: theme.text }]} multiline maxLength={1000} /><Pressable onPress={() => send()} style={[styles.sendButton, { backgroundColor: text.trim() ? ACCENT : theme.soft }]}><Ionicons name="arrow-up" size={19} color={text.trim() ? '#fff' : theme.sub} /></Pressable></View></View>
+        <View style={[styles.composerWrap, { borderTopColor: theme.border, backgroundColor: theme.bg }]}><Pressable style={[styles.plusButton, { backgroundColor: theme.soft }]} onPress={() => Alert.alert('Send', 'Choose a local demo attachment.', [{ text: 'Photo', onPress: pickChatPhoto }, { text: 'Voice message', onPress: () => send({ type: 'voice', text: '', duration: '0:08' }) }, { text: 'Cancel', style: 'cancel' }])}><Ionicons name="add" size={24} color={theme.text} /></Pressable><View style={[styles.composer, { backgroundColor: theme.input }]}><TextInput value={text} onChangeText={setText} placeholder={silentConfig?.enabled ? `Silent message · ${formatSilentTimer(silentConfig.timerSeconds)}` : `Message ${person.name.split(' ')[0]}`} placeholderTextColor={theme.sub} style={[styles.composerInput, { color: theme.text }]} multiline maxLength={1000} /><Pressable onPress={() => send()} style={[styles.sendButton, { backgroundColor: text.trim() ? ACCENT : theme.soft }]}><Ionicons name="arrow-up" size={19} color={text.trim() ? '#fff' : theme.sub} /></Pressable></View></View>
       </SafeAreaView>
     </KeyboardAvoidingView>
     </EdgeSwipeBack>
@@ -798,15 +917,15 @@ function CreateAccountModal({ visible, onClose, theme, onCreate, existingProfile
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={[styles.sheetCard, { backgroundColor: theme.card }]}><View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>New local account</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>Create another test identity</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View><View style={{ gap: 10, marginTop: 18 }}><TextInput value={name} onChangeText={setName} placeholder="Display name" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" placeholder="@username" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /><TextInput value={bio} onChangeText={setBio} placeholder="Short bio" placeholderTextColor={theme.sub} style={[styles.profileInput, { backgroundColor: theme.input, color: theme.text }]} /></View><Pressable onPress={submit} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Text style={{ color: theme.inverseText, fontWeight: '800' }}>Create & switch</Text></Pressable></View></View></Modal>;
 }
 
-function PersonProfileModal({ visible, onClose, theme, person, connected, privacy, plusActive = false, favorite = false, onToggleFavorite, onChat, onSendRequest, onWave }) {
+function PersonProfileModal({ visible, onClose, theme, person, connected, privacy, plusActive = false, proActive = false, favorite = false, onToggleFavorite, onChat, onSendRequest, onWave }) {
   if (!person) return null;
   const showSocials = privacy?.showSocials !== false;
   const showStatus = privacy?.showStatus !== false;
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.profileModal, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><Pill theme={theme}>{person.isLocal ? 'LOCAL ACCOUNT' : 'LINK PROFILE'}</Pill><IconButton icon="close" onPress={onClose} theme={theme} /></View><EffectAvatarStage person={person} size={84} effectSize={190} theme={theme} /><View style={styles.profileNameWithBadge}><Text style={[styles.profileName, { color: theme.text }]}>{person.name}</Text>{plusActive ? <PlusBadge /> : null}</View><Text style={[styles.profileUser, { color: theme.sub }]}>{person.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{person.bio}</Text>{showStatus ? <StatusBadge person={person} theme={theme} /> : null}{showSocials ? <View style={[styles.socialBox, { backgroundColor: theme.soft }]}><View style={styles.socialLine}><Ionicons name="logo-instagram" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.instagram || person.username}</Text></View><View style={styles.socialLine}><Ionicons name="musical-notes-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.spotify || person.name}</Text></View></View> : null}{connected ? <><View style={styles.profileActionRow}><Pressable onPress={() => { onClose(); onChat(); }} style={[styles.profilePrimaryAction, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble-ellipses" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Message</Text></Pressable><Pressable onPress={onToggleFavorite} style={[styles.profileSquareAction, { backgroundColor: favorite ? 'rgba(108,92,231,.14)' : theme.soft }]}><Ionicons name={favorite ? 'star' : 'star-outline'} size={21} color={favorite ? ACCENT : theme.text} /></Pressable></View><Pressable onPress={onWave} style={[styles.waveButton, { backgroundColor: theme.soft }]}><Ionicons name="hand-left-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '800' }}>Send a wave</Text></Pressable></> : <Pressable onPress={() => { onSendRequest?.(); onClose(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="link" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Send LINK request</Text></Pressable>}<Pressable onPress={() => Alert.alert('Safety', 'Block and report controls are prepared for server-backed moderation in a later build.')} style={[styles.safetyButton, { borderColor: theme.border }]}><Ionicons name="shield-outline" size={17} color={theme.sub} /><Text style={{ color: theme.sub, fontWeight: '700' }}>Safety options</Text></Pressable></Pressable></Pressable></Modal>;
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.profileModal, { backgroundColor: theme.card }]} onPress={() => {}}><View style={styles.rowBetween}><Pill theme={theme}>{person.isLocal ? 'LOCAL ACCOUNT' : 'LINK PROFILE'}</Pill><IconButton icon="close" onPress={onClose} theme={theme} /></View><EffectAvatarStage person={person} size={84} effectSize={190} theme={theme} /><View style={styles.profileNameWithBadge}><Text style={[styles.profileName, { color: theme.text }]}>{person.name}</Text>{proActive ? <ProBadge /> : plusActive ? <PlusBadge /> : null}</View><Text style={[styles.profileUser, { color: theme.sub }]}>{person.username}</Text><Text style={[styles.profileBio, { color: theme.sub }]}>{person.bio}</Text>{showStatus ? <StatusBadge person={person} theme={theme} /> : null}{showSocials ? <View style={[styles.socialBox, { backgroundColor: theme.soft }]}><View style={styles.socialLine}><Ionicons name="logo-instagram" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.instagram || person.username}</Text></View><View style={styles.socialLine}><Ionicons name="musical-notes-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '700' }}>{person.socials?.spotify || person.name}</Text></View></View> : null}{connected ? <><View style={styles.profileActionRow}><Pressable onPress={() => { onClose(); onChat(); }} style={[styles.profilePrimaryAction, { backgroundColor: theme.inverse }]}><Ionicons name="chatbubble-ellipses" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Message</Text></Pressable><Pressable onPress={onToggleFavorite} style={[styles.profileSquareAction, { backgroundColor: favorite ? 'rgba(108,92,231,.14)' : theme.soft }]}><Ionicons name={favorite ? 'star' : 'star-outline'} size={21} color={favorite ? ACCENT : theme.text} /></Pressable></View><Pressable onPress={onWave} style={[styles.waveButton, { backgroundColor: theme.soft }]}><Ionicons name="hand-left-outline" size={17} color={theme.text} /><Text style={{ color: theme.text, fontWeight: '800' }}>Send a wave</Text></Pressable></> : <Pressable onPress={() => { onSendRequest?.(); onClose(); }} style={[styles.widePrimary, { backgroundColor: theme.inverse }]}><Ionicons name="link" size={18} color={theme.inverseText} /><Text style={[styles.primaryButtonText, { color: theme.inverseText }]}>Send LINK request</Text></Pressable>}<Pressable onPress={() => Alert.alert('Safety', 'Block and report controls are prepared for server-backed moderation in a later build.')} style={[styles.safetyButton, { borderColor: theme.border }]}><Ionicons name="shield-outline" size={17} color={theme.sub} /><Text style={{ color: theme.sub, fontWeight: '700' }}>Safety options</Text></Pressable></Pressable></Pressable></Modal>;
 }
 
 
-function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, plusActive = false, onPurchase, onEquip, onRemove }) {
+function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, plusActive = false, proActive = false, onPurchase, onEquip, onRemove }) {
   const current = profileEffectById(profile?.profileEffectId);
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
@@ -829,7 +948,7 @@ function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, plusAc
                 <Pressable onPress={onRemove} style={[styles.effectRemoveButton, { backgroundColor: theme.soft }]}><Ionicons name="close" size={17} color={theme.text} /></Pressable>
               </View> : null}
 
-              <View style={styles.shopSectionHeader}><View><Text style={[styles.sectionTitle, { color: theme.text }]}>Profile Effects</Text><Text style={[styles.usernameSearchHint, { color: theme.sub }]}>{plusActive ? 'LINK Plus discount is active — 15% off every effect.' : 'Your uploaded artwork, turned into animated LINK profile cosmetics.'}</Text></View>{plusActive ? <PlusBadge /> : <Pill theme={theme}>{PROFILE_EFFECTS.length} FX</Pill>}</View>
+              <View style={styles.shopSectionHeader}><View><Text style={[styles.sectionTitle, { color: theme.text }]}>Profile Effects</Text><Text style={[styles.usernameSearchHint, { color: theme.sub }]}>{proActive ? 'LINK Pro discount is active — 30% off every effect.' : plusActive ? 'LINK Plus discount is active — 15% off every effect.' : 'Your uploaded artwork, turned into animated LINK profile cosmetics.'}</Text></View>{proActive ? <ProBadge /> : plusActive ? <PlusBadge /> : <Pill theme={theme}>{PROFILE_EFFECTS.length} FX</Pill>}</View>
 
               <View style={styles.effectGrid}>
                 {PROFILE_EFFECTS.map(effect => {
@@ -845,11 +964,11 @@ function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, plusAc
                     <Text style={[styles.effectMeta, { color: theme.sub }]}>{effect.animation === 'pulse' ? 'Pulse' : effect.animation === 'drift' ? 'Drift' : 'Float'} animation</Text>
                     {equipped ? <View style={[styles.effectButton, { backgroundColor: effect.color }]}><Ionicons name="checkmark" size={15} color="#fff" /><Text style={styles.effectButtonText}>Equipped</Text></View>
                       : owned ? <Pressable onPress={() => onEquip(effect.id)} style={[styles.effectButton, { backgroundColor: theme.inverse }]}><Ionicons name="sparkles" size={14} color={theme.inverseText} /><Text style={[styles.effectButtonText, { color: theme.inverseText }]}>Use effect</Text></Pressable>
-                      : <Pressable onPress={() => onPurchase(effect.id)} style={[styles.effectButton, { backgroundColor: theme.inverse }]}>{plusActive ? <><Text style={[styles.effectOldPrice, { color: theme.inverseText }]}>✦ {effect.price}</Text><Text style={[styles.effectButtonText, { color: theme.inverseText }]}>✦ {discountedEffectPrice(effect.price, true)}</Text></> : <Text style={[styles.effectButtonText, { color: theme.inverseText }]}>✦ {effect.price}</Text>}</Pressable>}
+                      : <Pressable onPress={() => onPurchase(effect.id)} style={[styles.effectButton, { backgroundColor: theme.inverse }]}>{plusActive || proActive ? <><Text style={[styles.effectOldPrice, { color: theme.inverseText }]}>✦ {effect.price}</Text><Text style={[styles.effectButtonText, { color: theme.inverseText }]}>✦ {discountedEffectPrice(effect.price, plusActive, proActive)}</Text></> : <Text style={[styles.effectButtonText, { color: theme.inverseText }]}>✦ {effect.price}</Text>}</Pressable>}
                   </View>;
                 })}
               </View>
-              <View style={[styles.shopFootnote, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="information-circle-outline" size={19} color={theme.sub} /><Text style={[styles.settingsSub, { color: theme.sub, flex: 1 }]}>{plusActive ? 'LINK Plus saves 15% on every Profile Effect. Purchases still use local LINK Coins only.' : 'Purchases in this build use local LINK Coins only. No real payment is charged.'}</Text></View>
+              <View style={[styles.shopFootnote, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="information-circle-outline" size={19} color={theme.sub} /><Text style={[styles.settingsSub, { color: theme.sub, flex: 1 }]}>{proActive ? 'LINK Pro saves 30% on every Profile Effect. Purchases still use local LINK Coins only.' : plusActive ? 'LINK Plus saves 15% on every Profile Effect. Purchases still use local LINK Coins only.' : 'Purchases in this build use local LINK Coins only. No real payment is charged.'}</Text></View>
             </ScrollView>
           </SafeAreaView>
         </View>
@@ -859,7 +978,7 @@ function ShopModal({ visible, onClose, theme, profile, balance, ownedIds, plusAc
 }
 
 
-function NoteComposerModal({ visible, onClose, theme, currentNote, plusActive = false, onSave, onDelete }) {
+function NoteComposerModal({ visible, onClose, theme, currentNote, plusActive = false, proActive = false, onSave, onDelete }) {
   const [text, setText] = useState('');
   const [emoji, setEmoji] = useState('💭');
   const [audience, setAudience] = useState('links');
@@ -879,7 +998,7 @@ function NoteComposerModal({ visible, onClose, theme, currentNote, plusActive = 
   };
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
     <Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.noteComposerCard, { backgroundColor: theme.card }]} onPress={() => {}}>
-      <View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Your Note</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>{plusActive ? 'LINK Plus Note · stays live for 72 hours.' : 'Lives above your avatar for 24 hours.'}</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+      <View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Your Note</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>{proActive ? 'LINK Pro Note · stays live for 7 days.' : plusActive ? 'LINK Plus Note · stays live for 72 hours.' : 'Lives above your avatar for 24 hours.'}</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
       <View style={[styles.notePreviewBig, { backgroundColor: theme.soft, borderColor: theme.border }]}><Text style={styles.notePreviewEmoji}>{emoji}</Text><Text numberOfLines={2} style={[styles.notePreviewText, { color: theme.text }]}>{text.trim() || 'What’s on your mind?'}</Text></View>
       <TextInput value={text} onChangeText={v => setText(v.slice(0, 60))} placeholder="Leave a note…" placeholderTextColor={theme.sub} maxLength={60} style={[styles.noteInput, { backgroundColor: theme.input, color: theme.text }]} />
       <View style={styles.noteMetaLine}><Text style={[styles.settingsSub, { color: theme.sub }]}>Emoji</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{text.length}/60</Text></View>
@@ -996,6 +1115,108 @@ function LinkPlusModal({ visible, onClose, theme, subscription, onActivate, onCa
   </Modal>;
 }
 
+
+function LinkProModal({ visible, onClose, theme, subscription, onActivate, onCancel }) {
+  const [selected, setSelected] = useState('annual');
+  const [trialEnabled, setTrialEnabled] = useState(true);
+  const active = subscriptionIsActive(subscription);
+  const plan = active ? LINK_PRO_PLANS[subscription.plan] : LINK_PRO_PLANS[selected];
+  const monthlyEquivalent = Math.round(LINK_PRO_PLANS.annual.price / 12);
+  const annualSavings = LINK_PRO_PLANS.monthly.price * 12 - LINK_PRO_PLANS.annual.price;
+  const features = [
+    ['sparkles-outline', 'Everything in LINK Plus', 'All Plus perks are automatically included while Pro is active.'],
+    ['eye-off-outline', 'Ghost Mode', 'Read messages without sending Seen receipts.'],
+    ['chatbubble-ellipses-outline', '7-day Notes', 'Keep your Note visible for a full week.'],
+    ['pricetag-outline', '30% off LINK Shop', 'The strongest Profile Effect discount in LINK.'],
+    ['analytics-outline', 'Profile Insights', 'See profile views, LINK count and message activity.'],
+    ['timer-outline', 'Advanced Silent Chat timers', 'Unlock 10-second and 7-day disappearing-message presets.'],
+    ['diamond-outline', 'PRO identity', 'Exclusive PRO badge on your LINK profile identity.'],
+    ['cash-outline', 'Bigger LINK Coin drops', '900 Coins monthly or 4,500 Coins with annual.'],
+  ];
+  return <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <EdgeSwipeBack onBack={onClose}>
+      <View style={[styles.plusPage, { backgroundColor: theme.bg }]}>
+        <SafeAreaView style={styles.flexOne}>
+          <View style={styles.plusHeader}><View><Text style={[styles.bigTitle, { color: theme.text }]}>LINK Pro</Text><Text style={[styles.headerSub, { color: theme.sub }]}>The full LINK experience.</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+          <ScrollView contentContainerStyle={styles.plusScroll} showsVerticalScrollIndicator={false}>
+            <View style={[styles.proHero, { backgroundColor: '#111318' }]}>
+              <View style={styles.plusHeroTop}><View style={[styles.plusHeroIcon, { backgroundColor: '#7C5CFC' }]}><Ionicons name="diamond" size={25} color="#fff" /></View><ProBadge /></View>
+              <Text style={[styles.plusHeroTitle, { color: '#fff' }]}>{active ? 'You’re on LINK Pro.' : 'Go beyond Plus.'}</Text>
+              <Text style={[styles.plusHeroBody, { color: 'rgba(255,255,255,.72)' }]}>{active ? `${subscription?.trial && (subscription?.trialEndsAt || 0) > Date.now() ? 'Your 7-day free trial is active. ' : ''}${plan?.label || 'Pro'} unlocks the highest LINK tier on this account.` : 'Privacy tools, deeper identity, stronger Shop savings and social insights — with every Plus benefit included.'}</Text>
+              {active && subscription?.trialEndsAt && subscription?.trial && subscription.trialEndsAt > Date.now() ? <Text style={[styles.plusRenewText, { color: '#C8BBFF' }]}>Free trial ends {new Date(subscription.trialEndsAt).toLocaleDateString()}</Text> : null}
+              {active && subscription?.expiresAt && !subscription?.trial ? <Text style={[styles.plusRenewText, { color: 'rgba(255,255,255,.62)' }]}>Renews / expires {new Date(subscription.expiresAt).toLocaleDateString()}</Text> : null}
+            </View>
+
+            {!active ? <>
+              <View style={styles.plusPlanRow}>
+                {Object.values(LINK_PRO_PLANS).map(p => {
+                  const chosen = selected === p.id;
+                  const annual = p.id === 'annual';
+                  return <Pressable key={p.id} onPress={() => setSelected(p.id)} style={[styles.plusPlanCard, { backgroundColor: theme.card, borderColor: chosen ? '#7C5CFC' : theme.border }, chosen && styles.plusPlanCardActive]}>
+                    {annual ? <View style={[styles.plusSaveBadge, { backgroundColor: '#7C5CFC' }]}><Text style={styles.plusSaveText}>SAVE {annualSavings} Kč</Text></View> : null}
+                    <Text style={[styles.plusPlanName, { color: theme.text }]}>{p.label}</Text>
+                    <Text style={[styles.plusPlanPrice, { color: theme.text }]}>{p.price} Kč</Text>
+                    <Text style={[styles.plusPlanPeriod, { color: theme.sub }]}>/{p.periodLabel}</Text>
+                    {annual ? <Text style={[styles.plusPlanEquivalent, { color: '#7C5CFC' }]}>≈ {monthlyEquivalent} Kč/month</Text> : <Text style={[styles.plusPlanEquivalent, { color: theme.sub }]}>Cancel anytime</Text>}
+                    <View style={[styles.plusRadio, { borderColor: chosen ? '#7C5CFC' : theme.border, backgroundColor: chosen ? '#7C5CFC' : 'transparent' }]}>{chosen ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}</View>
+                  </Pressable>;
+                })}
+              </View>
+              {selected === 'annual' ? <View style={[styles.trialToggleCard, { backgroundColor: theme.card, borderColor: trialEnabled ? '#7C5CFC' : theme.border }]}>
+                <View style={[styles.trialIcon, { backgroundColor: trialEnabled ? 'rgba(124,92,252,.14)' : theme.soft }]}><Ionicons name="gift-outline" size={20} color={trialEnabled ? '#7C5CFC' : theme.text} /></View>
+                <View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>7 days Free Trial</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>Try all Pro features free for 7 days, then continue on the annual plan.</Text></View>
+                <Switch value={trialEnabled} onValueChange={setTrialEnabled} trackColor={{ false: theme.soft, true: '#7C5CFC' }} />
+              </View> : null}
+            </> : null}
+
+            <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 22, marginBottom: 10 }]}>Everything in Pro</Text>
+            <View style={[styles.plusFeatureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              {features.map(([icon, title, body], i) => <View key={title} style={[styles.plusFeatureRow, i === features.length - 1 && { borderBottomWidth: 0 }]}>
+                <View style={[styles.plusFeatureIcon, { backgroundColor: 'rgba(124,92,252,.12)' }]}><Ionicons name={icon} size={19} color="#7C5CFC" /></View>
+                <View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{body}</Text></View>
+              </View>)}
+            </View>
+
+            {active ? <Pressable onPress={onCancel} style={[styles.plusCancelButton, { borderColor: theme.border }]}><Text style={{ color: theme.danger, fontWeight: '900' }}>Cancel LINK Pro</Text></Pressable>
+            : <Pressable onPress={() => onActivate(selected, selected === 'annual' && trialEnabled)} style={[styles.plusActivateButton, { backgroundColor: '#111318' }]}><Ionicons name={selected === 'annual' && trialEnabled ? 'gift' : 'diamond'} size={18} color="#fff" /><Text style={[styles.primaryButtonText, { color: '#fff' }]}>{selected === 'annual' && trialEnabled ? 'Start 7-day Free Trial' : `Get ${LINK_PRO_PLANS[selected].label} · ${LINK_PRO_PLANS[selected].price} Kč`}</Text></Pressable>}
+
+            <Text style={[styles.plusLegal, { color: theme.sub }]}>Prototype subscription only. No real payment is charged. The free-trial toggle demonstrates the intended App Store / Google Play flow.</Text>
+          </ScrollView>
+        </SafeAreaView>
+      </View>
+    </EdgeSwipeBack>
+  </Modal>;
+}
+
+function SilentChatModal({ visible, onClose, theme, config, proActive, onSave }) {
+  const [enabled, setEnabled] = useState(!!config?.enabled);
+  const [timerSeconds, setTimerSeconds] = useState(config?.timerSeconds || 5 * 60);
+  useEffect(() => { if (visible) { setEnabled(!!config?.enabled); setTimerSeconds(config?.timerSeconds || 5 * 60); } }, [visible, config?.enabled, config?.timerSeconds]);
+  const options = [...SILENT_TIMER_OPTIONS, ...(proActive ? PRO_SILENT_TIMER_OPTIONS : [])];
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.silentCard, { backgroundColor: theme.card }]} onPress={() => {}}>
+      <View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Silent Chat</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>New messages can disappear automatically.</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+      <View style={[styles.silentHero, { backgroundColor: enabled ? 'rgba(108,92,231,.12)' : theme.soft }]}><View style={[styles.silentHeroIcon, { backgroundColor: enabled ? ACCENT : theme.card }]}><Ionicons name="timer" size={23} color={enabled ? '#fff' : theme.text} /></View><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>{enabled ? 'Silent Chat is on' : 'Turn on disappearing messages'}</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>{enabled ? `New messages disappear ${formatSilentTimer(timerSeconds)} after sending.` : 'Existing messages stay. Only new messages use the timer.'}</Text></View><Switch value={enabled} onValueChange={setEnabled} trackColor={{ false: theme.soft, true: ACCENT }} /></View>
+      <Text style={[styles.settingsSub, { color: theme.sub, marginTop: 15, marginBottom: 8 }]}>Disappear after</Text>
+      <View style={styles.silentOptions}>{options.map(option => <Pressable key={option.seconds} disabled={!enabled} onPress={() => setTimerSeconds(option.seconds)} style={[styles.silentOption, { backgroundColor: timerSeconds === option.seconds && enabled ? theme.inverse : theme.soft, opacity: enabled ? 1 : .45 }]}><Text style={{ color: timerSeconds === option.seconds && enabled ? theme.inverseText : theme.text, fontWeight: '900', fontSize: 12 }}>{option.label}</Text>{PRO_SILENT_TIMER_OPTIONS.some(x => x.seconds === option.seconds) ? <Text style={{ color: timerSeconds === option.seconds && enabled ? theme.inverseText : '#7C5CFC', fontSize: 8, fontWeight: '900', marginTop: 2 }}>PRO</Text> : null}</Pressable>)}</View>
+      {!proActive ? <Text style={[styles.plusUnlockHint, { color: theme.sub, marginTop: 10 }]}>LINK Pro adds 10-second and 7-day timer presets. Silent Chat itself is available to everyone.</Text> : null}
+      <Pressable onPress={() => { onSave({ enabled, timerSeconds }); onClose(); }} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Ionicons name="checkmark" size={17} color={theme.inverseText} /><Text style={{ color: theme.inverseText, fontWeight: '900' }}>Save Silent Chat</Text></Pressable>
+    </Pressable></Pressable>
+  </Modal>;
+}
+
+function EncryptionInfoModal({ visible, onClose, theme }) {
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.securityCard, { backgroundColor: theme.card }]} onPress={() => {}}>
+      <View style={[styles.securityIcon, { backgroundColor: 'rgba(31,157,102,.12)' }]}><Ionicons name="lock-closed" size={28} color={theme.success} /></View>
+      <Text style={[styles.sheetTitle, { color: theme.text, marginTop: 14 }]}>End-to-end encrypted</Text>
+      <Text style={[styles.securityBody, { color: theme.sub }]}>LINK 0.7 encrypts text and attachment metadata with AES-256-GCM before it is written to local conversation storage. Each conversation receives its own encryption key.</Text>
+      <View style={[styles.securityNotice, { backgroundColor: theme.soft }]}><Ionicons name="information-circle-outline" size={18} color={theme.sub} /><Text style={[styles.settingsSub, { color: theme.sub, flex: 1 }]}>Prototype note: both Local Accounts live inside this one app, media files remain managed by the device/gallery, and multi-device key exchange has not been independently audited yet. Treat this as an encrypted local prototype, not a production security guarantee.</Text></View>
+      <Pressable onPress={onClose} style={[styles.createAccountButton, { backgroundColor: theme.inverse }]}><Text style={{ color: theme.inverseText, fontWeight: '900' }}>Got it</Text></Pressable>
+    </Pressable></Pressable>
+  </Modal>;
+}
+
 function MomentComposerModal({ visible, onClose, theme, activeProfile, onPost }) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef(null);
@@ -1055,6 +1276,11 @@ export default function App() {
   const [customStatusOpen, setCustomStatusOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
+  const [proOpen, setProOpen] = useState(false);
+  const [silentChatOpen, setSilentChatOpen] = useState(false);
+  const [encryptionInfoOpen, setEncryptionInfoOpen] = useState(false);
+  const [decryptedActiveMessages, setDecryptedActiveMessages] = useState([]);
+  const chatKeyCacheRef = useRef({});
 
   const activeMode = data.themeSetting === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : data.themeSetting;
   const theme = activeMode === 'dark' ? dark : light;
@@ -1063,19 +1289,34 @@ export default function App() {
   const connectedIds = data.relationships[data.activeAccountId] || [];
   const connectedProfiles = connectedIds.map(id => data.profiles[id]).filter(Boolean);
   const incomingRequests = data.requests.filter(r => r.toId === data.activeAccountId);
-  const privacy = data.privacy[data.activeAccountId] || { showStatus: true, showSocials: true, momentsToLinks: true };
+  const privacy = data.privacy[data.activeAccountId] || { showStatus: true, showSocials: true, momentsToLinks: true, ghostMode: false };
   const favoriteIds = data.favorites?.[data.activeAccountId] || [];
   const activeWallet = data.wallets?.[data.activeAccountId] ?? 0;
   const activeOwnedEffects = data.ownedEffects?.[data.activeAccountId] || [];
   const activeSubscription = data.subscriptions?.[data.activeAccountId] || null;
-  const activePlus = subscriptionIsActive(activeSubscription);
+  const activeProSubscription = data.proSubscriptions?.[data.activeAccountId] || null;
+  const activePro = subscriptionIsActive(activeProSubscription);
+  const activePlus = subscriptionIsActive(activeSubscription) || activePro;
   const activeChatPerson = activeChatId ? data.profiles[activeChatId] : null;
-  const activeMessages = activeChatId ? data.conversations[threadKey(data.activeAccountId, activeChatId)] || [] : [];
+  const activeThreadKey = activeChatId ? threadKey(data.activeAccountId, activeChatId) : null;
+  const rawActiveMessages = activeThreadKey ? (data.conversations[activeThreadKey] || EMPTY_MESSAGES) : EMPTY_MESSAGES;
+  const activeMessages = decryptedActiveMessages;
+  const activeSilentConfig = activeThreadKey ? (data.silentChats?.[activeThreadKey] || { enabled: false, timerSeconds: 5 * 60 }) : { enabled: false, timerSeconds: 5 * 60 };
   const profileModalPerson = profileModalId ? data.profiles[profileModalId] : null;
+  const profileModalProActive = subscriptionIsActive(data.proSubscriptions?.[profileModalId]);
+  const profileModalPlusActive = subscriptionIsActive(data.subscriptions?.[profileModalId]) || profileModalProActive;
+  const profileModalPrivacy = profileModalPerson?.isLocal
+    ? { ...(data.privacy?.[profileModalId] || { showStatus: true, showSocials: true }), showStatus: profileModalProActive && data.privacy?.[profileModalId]?.ghostMode ? false : (data.privacy?.[profileModalId]?.showStatus ?? true) }
+    : { showStatus: true, showSocials: true };
   const momentView = momentViewId ? data.moments.find(m => m.id === momentViewId) : null;
   const ownNote = (data.notes || []).find(n => n.ownerId === data.activeAccountId && (n.expiresAt || 0) > Date.now()) || null;
   const noteReply = noteReplyId ? (data.notes || []).find(n => n.id === noteReplyId) : null;
   const noteReplyPerson = noteReply ? data.profiles[noteReply.ownerId] : null;
+  const proInsights = useMemo(() => ({
+    views: data.profileViews?.[data.activeAccountId] || 0,
+    links: connectedIds.length,
+    messages: Object.values(data.conversations || {}).reduce((sum, list) => sum + (list || []).filter(m => m.senderId === data.activeAccountId).length, 0),
+  }), [data.profileViews, data.activeAccountId, connectedIds.length, data.conversations]);
 
   const payload = useMemo(() => {
     if (!activeProfile) return 'LINK::invalid';
@@ -1085,45 +1326,94 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
+        const base = initialData();
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        let source = base;
         if (raw) {
           const saved = JSON.parse(raw);
           if (saved?.profiles && saved?.activeAccountId) {
-            const base = initialData();
             const mergedProfiles = { ...base.profiles };
             Object.entries(saved.profiles || {}).forEach(([id, profile]) => { mergedProfiles[id] = { ...(base.profiles[id] || {}), ...profile }; });
+            const localIds = saved.localAccountIds || base.localAccountIds;
             const mergedWallets = { ...base.wallets, ...(saved.wallets || {}) };
             const mergedOwnedEffects = { ...base.ownedEffects, ...(saved.ownedEffects || {}) };
             const mergedSubscriptions = { ...base.subscriptions, ...(saved.subscriptions || {}) };
-            (saved.localAccountIds || base.localAccountIds).forEach(id => {
+            const mergedProSubscriptions = { ...base.proSubscriptions, ...(saved.proSubscriptions || {}) };
+            const mergedProfileViews = { ...base.profileViews, ...(saved.profileViews || {}) };
+            const mergedPrivacy = { ...base.privacy, ...(saved.privacy || {}) };
+            localIds.forEach(id => {
               if (mergedWallets[id] == null) mergedWallets[id] = 2200;
               if (!Array.isArray(mergedOwnedEffects[id])) mergedOwnedEffects[id] = [];
               if (!(id in mergedSubscriptions)) mergedSubscriptions[id] = null;
+              if (!(id in mergedProSubscriptions)) mergedProSubscriptions[id] = null;
+              if (!(id in mergedProfileViews)) mergedProfileViews[id] = 0;
+              mergedPrivacy[id] = { showStatus: true, showSocials: true, momentsToLinks: true, ghostMode: false, ...(mergedPrivacy[id] || {}) };
             });
-            setData({
-              ...base, ...saved, version: 6,
+            source = {
+              ...base, ...saved, version: 7,
               profiles: mergedProfiles,
-              privacy: { ...base.privacy, ...(saved.privacy || {}) },
+              privacy: mergedPrivacy,
               notifications: { ...base.notifications, ...(saved.notifications || {}) },
               favorites: { ...base.favorites, ...(saved.favorites || {}) },
               wallets: mergedWallets,
               ownedEffects: mergedOwnedEffects,
               subscriptions: mergedSubscriptions,
+              proSubscriptions: mergedProSubscriptions,
+              profileViews: mergedProfileViews,
+              chatKeys: { ...base.chatKeys, ...(saved.chatKeys || {}) },
+              silentChats: { ...base.silentChats, ...(saved.silentChats || {}) },
               notes: Array.isArray(saved.notes) ? saved.notes : base.notes,
-            });
+              localAccountIds: localIds,
+            };
           }
         }
-      } catch (e) { console.warn('LINK storage load failed', e); }
-      finally { setHydrated(true); }
+        const secured = await migrateConversationEncryption(source);
+        setData(secured);
+      } catch (e) {
+        console.warn('LINK storage load failed', e);
+        try { setData(await migrateConversationEncryption(initialData())); } catch { setData(initialData()); }
+      } finally {
+        setHydrated(true);
+      }
     })();
   }, []);
   useEffect(() => { if (hydrated) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data)).catch(() => {}); }, [hydrated, data]);
+  useEffect(() => { chatKeyCacheRef.current = { ...(data.chatKeys || {}) }; }, [data.chatKeys]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!activeThreadKey) { setDecryptedActiveMessages([]); return; }
+      const live = rawActiveMessages.filter(message => !message.expiresAt || message.expiresAt > Date.now());
+      const decrypted = await decryptConversation(live, data.chatKeys?.[activeThreadKey]);
+      if (!cancelled) setDecryptedActiveMessages(decrypted);
+    })();
+    return () => { cancelled = true; };
+  }, [activeThreadKey, rawActiveMessages, data.chatKeys]);
 
   const mutate = (fn) => setData(prev => fn(prev));
   const notify = (draft, accountId, item) => {
     draft.notifications = { ...draft.notifications, [accountId]: [{ id: uid('n'), time: nowTime(), read: false, ...item }, ...(draft.notifications[accountId] || [])] };
     return draft;
   };
+
+  useEffect(() => {
+    if (!hydrated) return undefined;
+    const timer = setInterval(() => {
+      mutate(prev => {
+        const now = Date.now();
+        let changed = false;
+        const conversations = {};
+        Object.entries(prev.conversations || {}).forEach(([key, list]) => {
+          const filtered = (list || []).filter(message => !message.expiresAt || message.expiresAt > now);
+          if (filtered.length !== (list || []).length) changed = true;
+          conversations[key] = filtered;
+        });
+        return changed ? { ...prev, conversations } : prev;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [hydrated]);
 
   const switchAccount = (id) => {
     setActiveChatId(null); setTab('home'); setAccountsOpen(false);
@@ -1141,10 +1431,12 @@ export default function App() {
       relationships: { ...prev.relationships, [id]: [] },
       notifications: { ...prev.notifications, [id]: [] },
       favorites: { ...(prev.favorites || {}), [id]: [] },
-      privacy: { ...prev.privacy, [id]: { showStatus: true, showSocials: true, momentsToLinks: true } },
+      privacy: { ...prev.privacy, [id]: { showStatus: true, showSocials: true, momentsToLinks: true, ghostMode: false } },
       wallets: { ...(prev.wallets || {}), [id]: 2200 },
       ownedEffects: { ...(prev.ownedEffects || {}), [id]: [] },
       subscriptions: { ...(prev.subscriptions || {}), [id]: null },
+      proSubscriptions: { ...(prev.proSubscriptions || {}), [id]: null },
+      profileViews: { ...(prev.profileViews || {}), [id]: 0 },
     }));
     setCreateAccountOpen(false); setAccountsOpen(false); setTab('home');
   };
@@ -1220,20 +1512,53 @@ export default function App() {
     setActiveChatId(person.id);
   };
 
+  const openProfileModal = (person) => {
+    const id = typeof person === 'string' ? person : person?.id;
+    if (!id) return;
+    if (id !== data.activeAccountId && data.profiles[id]?.isLocal) {
+      mutate(prev => ({ ...prev, profileViews: { ...(prev.profileViews || {}), [id]: (prev.profileViews?.[id] || 0) + 1 } }));
+    }
+    setProfileModalId(id);
+  };
+
   const markRead = () => {
     if (!activeChatId) return;
     const key = threadKey(data.activeAccountId, activeChatId);
-    mutate(prev => ({ ...prev, conversations: { ...prev.conversations, [key]: (prev.conversations[key] || []).map(m => ({ ...m, readBy: Array.from(new Set([...(m.readBy || []), prev.activeAccountId])) })) } }));
+    mutate(prev => {
+      const accountId = prev.activeAccountId;
+      const ghost = subscriptionIsActive(prev.proSubscriptions?.[accountId]) && !!prev.privacy?.[accountId]?.ghostMode;
+      const list = (prev.conversations[key] || []).map(message => {
+        if (message.senderId === accountId) return message;
+        const seenBy = Array.from(new Set([...(message.seenBy || message.readBy || []), accountId]));
+        const readBy = ghost ? (message.readBy || []) : Array.from(new Set([...(message.readBy || []), accountId]));
+        return { ...message, seenBy, readBy };
+      });
+      return { ...prev, conversations: { ...prev.conversations, [key]: list } };
+    });
   };
 
-  const sendMessage = (personId, payload) => {
-    const key = threadKey(data.activeAccountId, personId);
-    mutate(prev => {
-      const msg = { id: uid('m'), senderId: prev.activeAccountId, type: payload.type || 'text', text: payload.text || '', uri: payload.uri, duration: payload.duration, replyTo: payload.replyTo || null, time: nowTime(), readBy: [prev.activeAccountId], reactions: [] };
-      let next = { ...prev, conversations: { ...prev.conversations, [key]: [...(prev.conversations[key] || []), msg] } };
-      if (prev.profiles[personId]?.isLocal) next = notify(next, personId, { type: 'message', title: prev.profiles[prev.activeAccountId].name, body: msg.type === 'text' ? msg.text : msg.type === 'photo' ? '📷 Photo' : '🎙 Voice message' });
-      return next;
-    });
+  const sendMessage = async (personId, payload) => {
+    const senderId = data.activeAccountId;
+    const key = threadKey(senderId, personId);
+    try {
+      let keyBase64 = chatKeyCacheRef.current[key];
+      if (!keyBase64) {
+        keyBase64 = await createThreadKey();
+        chatKeyCacheRef.current[key] = keyBase64;
+      }
+      const cipher = await encryptMessageContent({ text: payload.text || '', uri: payload.uri || null, duration: payload.duration || null }, keyBase64);
+      const silent = data.silentChats?.[key];
+      const expiresAt = silent?.enabled ? Date.now() + (silent.timerSeconds || 5 * 60) * 1000 : null;
+      mutate(prev => {
+        const msg = { id: uid('m'), senderId: prev.activeAccountId, type: payload.type || 'text', cipher, encrypted: true, replyTo: payload.replyTo || null, time: nowTime(), readBy: [prev.activeAccountId], seenBy: [prev.activeAccountId], reactions: [], expiresAt };
+        let next = { ...prev, chatKeys: { ...(prev.chatKeys || {}), [key]: keyBase64 }, conversations: { ...prev.conversations, [key]: [...(prev.conversations[key] || []), msg] } };
+        if (prev.profiles[personId]?.isLocal) next = notify(next, personId, { type: 'message', title: prev.profiles[prev.activeAccountId].name, body: silent?.enabled ? `🔒 Silent message · ${formatSilentTimer(silent.timerSeconds)}` : '🔒 New encrypted message' });
+        return next;
+      });
+    } catch (error) {
+      console.warn('LINK encryption failed', error);
+      Alert.alert('Message not sent', 'LINK could not encrypt this message. Try again.');
+    }
   };
 
   const reactMessage = (personId, messageId, emoji) => {
@@ -1252,8 +1577,9 @@ export default function App() {
     mutate(prev => {
       const clean = (prev.notes || []).filter(n => n.ownerId !== prev.activeAccountId);
       const now = Date.now();
-      const plus = subscriptionIsActive(prev.subscriptions?.[prev.activeAccountId]);
-      const durationHours = plus ? 72 : 24;
+      const pro = subscriptionIsActive(prev.proSubscriptions?.[prev.activeAccountId]);
+      const plus = subscriptionIsActive(prev.subscriptions?.[prev.activeAccountId]) || pro;
+      const durationHours = pro ? 168 : plus ? 72 : 24;
       return { ...prev, notes: [{ id: uid('note'), ownerId: prev.activeAccountId, text, emoji, audience, createdAt: now, expiresAt: now + durationHours * 60 * 60 * 1000 }, ...clean] };
     });
   };
@@ -1290,8 +1616,9 @@ ${text}` });
       const owned = prev.ownedEffects?.[accountId] || [];
       if (owned.includes(effectId)) return { ...prev, profiles: { ...prev.profiles, [accountId]: { ...prev.profiles[accountId], profileEffectId: effectId } } };
       const balance = prev.wallets?.[accountId] ?? 0;
-      const plus = subscriptionIsActive(prev.subscriptions?.[accountId]);
-      const price = discountedEffectPrice(effect.price, plus);
+      const pro = subscriptionIsActive(prev.proSubscriptions?.[accountId]);
+      const plus = subscriptionIsActive(prev.subscriptions?.[accountId]) || pro;
+      const price = discountedEffectPrice(effect.price, plus, pro);
       if (balance < price) return prev;
       return {
         ...prev,
@@ -1301,7 +1628,7 @@ ${text}` });
       };
     });
     if (activeOwnedEffects.includes(effectId)) return;
-    const currentPrice = discountedEffectPrice(effect.price, activePlus);
+    const currentPrice = discountedEffectPrice(effect.price, activePlus, activePro);
     if (activeWallet < currentPrice) Alert.alert('Not enough LINK Coins', `You need ✦ ${currentPrice}. Your balance is ✦ ${activeWallet}.`);
   };
 
@@ -1339,21 +1666,61 @@ ${text}` });
     ]);
   };
 
-  const resetDemo = () => Alert.alert('Reset LINK 0.6.1?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(initialData()); setActiveChatId(null); setTab('home'); } }]);
+  const activatePro = (planId, trial = false) => {
+    const plan = LINK_PRO_PLANS[planId];
+    if (!plan) return;
+    mutate(prev => {
+      const accountId = prev.activeAccountId;
+      const now = Date.now();
+      const useTrial = plan.id === 'annual' && trial;
+      const trialMs = useTrial ? 7 * 24 * 60 * 60 * 1000 : 0;
+      const currentBalance = prev.wallets?.[accountId] ?? 0;
+      return {
+        ...prev,
+        proSubscriptions: { ...(prev.proSubscriptions || {}), [accountId]: { active: true, plan: plan.id, startedAt: now, trial: useTrial, trialEndsAt: useTrial ? now + trialMs : null, expiresAt: now + trialMs + plan.days * 24 * 60 * 60 * 1000 } },
+        wallets: { ...(prev.wallets || {}), [accountId]: currentBalance + plan.bonusCoins },
+      };
+    });
+    setProOpen(false);
+    Alert.alert(trial && plan.id === 'annual' ? 'LINK Pro trial started ◆' : 'Welcome to LINK Pro ◆', `${plan.label} unlocked. You also received ✦ ${plan.bonusCoins} LINK Coins in this prototype.`);
+  };
+
+  const cancelPro = () => {
+    Alert.alert('Cancel LINK Pro?', 'Pro features will be disabled immediately in this local prototype.', [
+      { text: 'Keep Pro', style: 'cancel' },
+      { text: 'Cancel Pro', style: 'destructive', onPress: () => {
+        mutate(prev => ({ ...prev, proSubscriptions: { ...(prev.proSubscriptions || {}), [prev.activeAccountId]: null }, privacy: { ...prev.privacy, [prev.activeAccountId]: { ...(prev.privacy?.[prev.activeAccountId] || {}), ghostMode: false } } }));
+        setProOpen(false);
+      }},
+    ]);
+  };
+
+  const saveSilentConfig = (config) => {
+    if (!activeThreadKey) return;
+    mutate(prev => ({ ...prev, silentChats: { ...(prev.silentChats || {}), [activeThreadKey]: config } }));
+  };
+
+  const resetDemo = () => Alert.alert('Reset LINK 0.7.0?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(await migrateConversationEncryption(initialData())); setActiveChatId(null); setTab('home'); } }]);
 
   if (!hydrated || !activeProfile) return <View style={[styles.loading, { backgroundColor: light.bg }]}><View style={styles.loadingLogo}><Text style={styles.loadingLogoText}>L*</Text></View><Text style={{ fontWeight: '900', color: light.text, fontSize: 17 }}>LINK</Text><Text style={{ color: light.sub, fontSize: 12 }}>{BUILD}</Text></View>;
 
-  if (activeChatPerson) return <><RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} /><ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatPerson} messages={activeMessages} profiles={data.profiles} onBack={() => setActiveChatId(null)} onSend={sendMessage} onReact={reactMessage} onDelete={deleteMessage} onOpenProfile={p => setProfileModalId(p.id)} markRead={markRead} /><PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} plusActive={subscriptionIsActive(data.subscriptions?.[profileModalId])} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} /></>;
+  if (activeChatPerson) return <>
+    <RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
+    <ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatPerson} messages={activeMessages} profiles={data.profiles} onBack={() => setActiveChatId(null)} onSend={sendMessage} onReact={reactMessage} onDelete={deleteMessage} onOpenProfile={openProfileModal} markRead={markRead} silentConfig={activeSilentConfig} onOpenSilent={() => setSilentChatOpen(true)} onOpenEncryptionInfo={() => setEncryptionInfoOpen(true)} />
+    <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPrivacy} plusActive={profileModalPlusActive} proActive={profileModalProActive} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} />
+    <SilentChatModal visible={silentChatOpen} onClose={() => setSilentChatOpen(false)} theme={theme} config={activeSilentConfig} proActive={activePro} onSave={saveSilentConfig} />
+    <EncryptionInfoModal visible={encryptionInfoOpen} onClose={() => setEncryptionInfoOpen(false)} theme={theme} />
+  </>;
 
   return (
     <View style={[styles.app, { backgroundColor: theme.bg }]}>
       <RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
       <SafeAreaView style={styles.safe}><View style={styles.content}>
         {tab === 'home' && <HomeScreen theme={theme} activeProfile={activeProfile} connectedProfiles={connectedProfiles} conversations={data.conversations} activeId={data.activeAccountId} requests={incomingRequests} notifications={data.notifications} moments={data.moments} notes={data.notes || []} profiles={data.profiles} favorites={data.favorites || {}} favoriteIds={favoriteIds} openOwnCard={() => setCardOpen(true)} openScanner={() => setScannerOpen(true)} openChat={openChat} openAccountSwitcher={() => setAccountsOpen(true)} openNotifications={() => setNotificationsOpen(true)} onAccept={acceptRequest} onDecline={declineRequest} onCreateMoment={() => setMomentComposerOpen(true)} onOpenMoment={m => setMomentViewId(m.id)} onOwnNote={() => setNoteComposerOpen(true)} onOpenNote={(n) => setNoteReplyId(n.id)} setTab={setTab} />}
-        {tab === 'people' && <PeopleScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} localAccountIds={data.localAccountIds} requests={data.requests} favoriteIds={favoriteIds} openProfile={p => setProfileModalId(p.id)} openChat={openChat} sendRequest={sendRequest} onAccept={acceptRequest} onDecline={declineRequest} />}
+        {tab === 'people' && <PeopleScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} localAccountIds={data.localAccountIds} requests={data.requests} favoriteIds={favoriteIds} openProfile={openProfileModal} openChat={openChat} sendRequest={sendRequest} onAccept={acceptRequest} onDecline={declineRequest} />}
         {tab === 'link' && <LinkScreen theme={theme} activeProfile={activeProfile} payload={payload} localProfiles={localProfiles} relationships={data.relationships} requests={data.requests} openScanner={() => setScannerOpen(true)} openOwnCard={() => setCardOpen(true)} sendRequest={sendRequest} onAccept={acceptRequest} onDecline={declineRequest} />}
         {tab === 'chats' && <ChatsScreen theme={theme} activeId={data.activeAccountId} profiles={data.profiles} connectedIds={connectedIds} conversations={data.conversations} favoriteIds={favoriteIds} openChat={openChat} />}
-        {tab === 'profile' && <ProfileScreen theme={theme} activeProfile={activeProfile} updateProfile={updateActiveProfile} themeSetting={data.themeSetting} setThemeSetting={setThemeSetting} privacy={privacy} setPrivacy={setPrivacy} openAccountSwitcher={() => setAccountsOpen(true)} openCustomStatus={() => setCustomStatusOpen(true)} openShop={() => setShopOpen(true)} openPlus={() => setPlusOpen(true)} plusSubscription={activeSubscription} resetDemo={resetDemo} />}
+        {tab === 'profile' && <ProfileScreen theme={theme} activeProfile={activeProfile} updateProfile={updateActiveProfile} themeSetting={data.themeSetting} setThemeSetting={setThemeSetting} privacy={privacy} setPrivacy={setPrivacy} openAccountSwitcher={() => setAccountsOpen(true)} openCustomStatus={() => setCustomStatusOpen(true)} openShop={() => setShopOpen(true)} openPlus={activePro ? () => setProOpen(true) : () => setPlusOpen(true)} plusSubscription={activeSubscription} openPro={() => setProOpen(true)} proSubscription={activeProSubscription} insights={proInsights} resetDemo={resetDemo} />}
       </View><TabBar tab={tab} setTab={setTab} theme={theme} darkMode={activeMode === 'dark'} /></SafeAreaView>
 
       <ScannerModal visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={onScanned} />
@@ -1361,13 +1728,16 @@ ${text}` });
       <NotificationsModal visible={notificationsOpen} onClose={() => setNotificationsOpen(false)} theme={theme} items={data.notifications[data.activeAccountId] || []} markAllRead={markNotificationsRead} />
       <AccountSwitcherModal visible={accountsOpen} onClose={() => setAccountsOpen(false)} theme={theme} localProfiles={localProfiles} activeId={data.activeAccountId} onSwitch={switchAccount} onCreate={() => { setAccountsOpen(false); setCreateAccountOpen(true); }} />
       <CreateAccountModal visible={createAccountOpen} onClose={() => setCreateAccountOpen(false)} theme={theme} onCreate={createLocalAccount} existingProfiles={data.profiles} />
-      <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPerson?.isLocal ? data.privacy[profileModalId] : { showStatus: true, showSocials: true }} plusActive={subscriptionIsActive(data.subscriptions?.[profileModalId])} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} onSendRequest={() => profileModalId && sendRequest(profileModalId)} />
+      <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPrivacy} plusActive={profileModalPlusActive} proActive={profileModalProActive} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} onSendRequest={() => profileModalId && sendRequest(profileModalId)} />
       <MomentComposerModal visible={momentComposerOpen} onClose={() => setMomentComposerOpen(false)} theme={theme} activeProfile={activeProfile} onPost={postMoment} />
       <MomentViewerModal visible={!!momentViewId} onClose={() => setMomentViewId(null)} theme={theme} moment={momentView} owner={momentView ? data.profiles[momentView.ownerId] : null} />
-      <NoteComposerModal visible={noteComposerOpen} onClose={() => setNoteComposerOpen(false)} theme={theme} currentNote={ownNote} plusActive={activePlus} onSave={saveNote} onDelete={deleteOwnNote} />
+      <NoteComposerModal visible={noteComposerOpen} onClose={() => setNoteComposerOpen(false)} theme={theme} currentNote={ownNote} plusActive={activePlus} proActive={activePro} onSave={saveNote} onDelete={deleteOwnNote} />
       <NoteReplyModal visible={!!noteReplyId} onClose={() => setNoteReplyId(null)} theme={theme} note={noteReply} person={noteReplyPerson} onReply={text => noteReply && replyToNote(noteReply, text)} />
-      <ShopModal visible={shopOpen} onClose={() => setShopOpen(false)} theme={theme} profile={activeProfile} balance={activeWallet} ownedIds={activeOwnedEffects} plusActive={activePlus} onPurchase={purchaseEffect} onEquip={equipEffect} onRemove={removeEffect} />
+      <ShopModal visible={shopOpen} onClose={() => setShopOpen(false)} theme={theme} profile={activeProfile} balance={activeWallet} ownedIds={activeOwnedEffects} plusActive={activePlus} proActive={activePro} onPurchase={purchaseEffect} onEquip={equipEffect} onRemove={removeEffect} />
       <LinkPlusModal visible={plusOpen} onClose={() => setPlusOpen(false)} theme={theme} subscription={activeSubscription} onActivate={activatePlus} onCancel={cancelPlus} />
+      <LinkProModal visible={proOpen} onClose={() => setProOpen(false)} theme={theme} subscription={activeProSubscription} onActivate={activatePro} onCancel={cancelPro} />
+      <SilentChatModal visible={silentChatOpen} onClose={() => setSilentChatOpen(false)} theme={theme} config={activeSilentConfig} proActive={activePro} onSave={saveSilentConfig} />
+      <EncryptionInfoModal visible={encryptionInfoOpen} onClose={() => setEncryptionInfoOpen(false)} theme={theme} />
       <CustomStatusModal visible={customStatusOpen} onClose={() => setCustomStatusOpen(false)} theme={theme} profile={activeProfile} plusActive={activePlus} onSave={patch => updateActiveProfile({ ...activeProfile, ...patch })} />
     </View>
   );
@@ -1497,5 +1867,28 @@ const styles = StyleSheet.create({
   plusActivateButton: { minHeight: 54, borderRadius: 18, marginTop: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   plusCancelButton: { minHeight: 50, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, marginTop: 18, alignItems: 'center', justifyContent: 'center' },
   plusLegal: { fontSize: 10.5, lineHeight: 15, textAlign: 'center', marginTop: 12, paddingHorizontal: 12 },
+
+  proBadge: { minHeight: 24, paddingHorizontal: 9, borderRadius: 999, backgroundColor: '#111318', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(124,92,252,.7)' },
+  proEntryCard: { minHeight: 88, borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  proEntryIcon: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  insightsCard: { minHeight: 100, borderWidth: StyleSheet.hairlineWidth, borderRadius: 24, paddingVertical: 18, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  insightItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  insightValue: { fontSize: 24, fontWeight: '900', letterSpacing: -.8 },
+  insightLabel: { fontSize: 10.5, fontWeight: '700', marginTop: 4, textAlign: 'center' },
+  insightDivider: { width: StyleSheet.hairlineWidth, height: 48 },
+  proHero: { borderRadius: 30, padding: 22, marginTop: 8, overflow: 'hidden' },
+  trialToggleCard: { minHeight: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, padding: 13, marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  trialIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  silentCard: { width: '100%', maxWidth: 430, borderRadius: 30, padding: 19 },
+  silentHero: { borderRadius: 22, padding: 14, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  silentHeroIcon: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  silentOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  silentOption: { minWidth: 72, minHeight: 50, paddingHorizontal: 13, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  silentBanner: { marginHorizontal: 14, marginTop: 7, minHeight: 38, borderRadius: 14, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  silentBannerText: { flex: 1, fontSize: 10.5, fontWeight: '800', textAlign: 'center' },
+  securityCard: { width: '100%', maxWidth: 430, borderRadius: 30, padding: 22, alignItems: 'center' },
+  securityIcon: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  securityBody: { fontSize: 13.5, lineHeight: 20, textAlign: 'center', marginTop: 9 },
+  securityNotice: { width: '100%', borderRadius: 18, padding: 13, flexDirection: 'row', gap: 9, alignItems: 'flex-start', marginTop: 16 },
 
 });

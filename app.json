@@ -1,46 +1,14 @@
 {
   "expo": {
     "name": "LINK",
-    "slug": "link-social-mvp",
-    "version": "0.4.0",
+    "slug": "link-social",
+    "version": "0.7.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true,
-      "infoPlist": {
-        "NSCameraUsageDescription": "LINK uses the camera to scan LINK QR cards and create Moments.",
-        "NSPhotoLibraryUsageDescription": "LINK uses your photo library to choose a profile photo and send images in chat."
-      }
+      "supportsTablet": true
     },
-    "android": {
-      "permissions": [
-        "CAMERA"
-      ]
-    },
-    "plugins": [
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow LINK to use your camera to scan LINK QR cards and create Moments.",
-          "barcodeScannerEnabled": true
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow LINK to access your photos for profile pictures, Moments and chat images.",
-          "cameraPermission": "Allow LINK to use your camera for Moments."
-        }
-      ]
-    ],
-    "platforms": [
-      "ios",
-      "android",
-      "web"
-    ],
-    "web": {
-      "bundler": "metro",
-      "output": "single"
-    }
+    "android": {},
+    "web": {}
   }
 }
