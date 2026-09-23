@@ -126,7 +126,7 @@
       <div class="meta">
         <div class="row"><span id="repoDot" class="dot wait"></span><span class="label">Repository</span><span class="value" id="repoValue">Zjišťuji…</span></div>
         <div class="row"><span class="dot"></span><span class="label">Expo SDK</span><span class="value">57</span></div>
-        <div class="row"><span class="dot"></span><span class="label">Build</span><span class="value">LINK 0.7.0</span></div>
+        <div class="row"><span class="dot"></span><span class="label">Build</span><span class="value">LINK 0.8.0</span></div>
       </div>
 
       <div class="actions">
@@ -141,7 +141,7 @@
 
   <script>
     (() => {
-      const BUILD = 'LINK 0.7.0';
+      const BUILD = 'LINK 0.8.0';
       const SDK_VERSION = '57.0.0';
       const DEFAULT_BRANCH = 'main';
       const DEPENDENCIES = [
@@ -151,6 +151,7 @@
         'expo-image-picker@~57.0.19',
         'expo-blur@~57.0.3',
         'expo-crypto@~57.0.3',
+        'expo-linear-gradient@~57.0.2',
         'react-native-qrcode-svg@^6.3.25',
         'react-native-svg@15.15.4'
       ];
@@ -225,7 +226,7 @@
 
         const params = new URLSearchParams();
         params.set('name', BUILD);
-        params.set('description', 'LINK 0.7.0 — encrypted local chat prototype with AES-GCM message payload encryption, Silent Chat disappearing messages, LINK Pro monthly/annual plans with optional 7-day annual trial, Ghost Mode, 7-day Notes, Profile Insights, 30% Shop savings — plus LINK Plus, local accounts, Profile Effects, @username search, Liquid Glass navigation and Moments. Generated from GitHub.');
+        params.set('description', 'LINK 0.8.0 — redesigned Apple-level chat UI, end-to-end encrypted chat label, Silent Chat, per-conversation chat themes with Free / LINK Plus / LINK Pro colors and gradients, LINK Pro and LINK Plus subscriptions, local accounts, Profile Effects, @username search, Liquid Glass navigation and Moments. Generated from GitHub.');
         params.set('sdkVersion', SDK_VERSION);
         params.set('platform', 'mydevice');
         params.set('supportedPlatforms', 'ios,android,web');

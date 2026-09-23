@@ -25,6 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
@@ -32,7 +33,7 @@ import QRCode from 'react-native-qrcode-svg';
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
 const EMPTY_MESSAGES = Object.freeze([]);
-const BUILD = 'LINK 0.7.0';
+const BUILD = 'LINK 0.8.0';
 const LINK_PLUS_PLANS = {
   monthly: { id: 'monthly', label: 'Monthly', price: 79, periodLabel: 'month', bonusCoins: 400, days: 30 },
   annual: { id: 'annual', label: 'Annual', price: 649, periodLabel: 'year', bonusCoins: 1500, days: 365 },
@@ -55,6 +56,27 @@ const PRO_SILENT_TIMER_OPTIONS = [
 ];
 const PLUS_STATUS_COLORS = ['#FFD60A', '#64D2FF', '#BF5AF2', '#FF375F', '#30D158'];
 const PLUS_STATUS_ICONS = ['diamond', 'planet', 'rocket', 'skull', 'rose'];
+const CHAT_THEMES = [
+  { id: 'default', name: 'Default', tier: 'free', colors: ['#007AFF'], textColor: '#FFFFFF' },
+  { id: 'red', name: 'Red', tier: 'free', colors: ['#FF3B30'], textColor: '#FFFFFF' },
+  { id: 'green', name: 'Green', tier: 'plus', colors: ['#34C759'], textColor: '#FFFFFF' },
+  { id: 'race_green', name: 'Race Green', tier: 'plus', colors: ['#0C7C4A'], textColor: '#FFFFFF' },
+  { id: 'lime_green', name: 'Lime Green', tier: 'plus', colors: ['#A8E900'], textColor: '#102000' },
+  { id: 'bright_red', name: 'Bright Red', tier: 'plus', colors: ['#FF1744'], textColor: '#FFFFFF' },
+  { id: 'yellow', name: 'Yellow', tier: 'plus', colors: ['#FFD60A'], textColor: '#1B1600' },
+  { id: 'cyan_green', name: 'Cyan Green', tier: 'pro', colors: ['#00C7BE'], textColor: '#FFFFFF' },
+  { id: 'cyan_blue', name: 'Cyan Blue', tier: 'pro', colors: ['#00A9FF'], textColor: '#FFFFFF' },
+  { id: 'sunset', name: 'Sunset', tier: 'pro', colors: ['#FF2D55', '#FF9F0A'], textColor: '#FFFFFF' },
+  { id: 'blue_purple', name: 'Blue & Purple', tier: 'pro', colors: ['#0A84FF', '#AF52DE'], textColor: '#FFFFFF' },
+  { id: 'gold', name: 'Gold', tier: 'pro', colors: ['#E0B83D', '#B88713'], textColor: '#1F1600' },
+  { id: 'monochromatic', name: 'Monochromatic', tier: 'pro', colors: ['#111111', '#6E6E73'], textColor: '#FFFFFF' },
+  { id: 'sky_blue', name: 'Sky Blue (Classic)', tier: 'pro', colors: ['#5AC8FA'], textColor: '#062538' },
+  { id: 'rose_pink', name: 'Rose Pink', tier: 'pro', colors: ['#FF6482'], textColor: '#FFFFFF' },
+  { id: 'hot_pink', name: 'Hot Pink', tier: 'pro', colors: ['#FF2D95'], textColor: '#FFFFFF' },
+  { id: 'glamorous_pink', name: 'Glamurous Pink', tier: 'pro', colors: ['#FF2D95', '#BF5AF2', '#FF375F'], textColor: '#FFFFFF' },
+];
+const chatThemeById = (id) => CHAT_THEMES.find(item => item.id === id) || CHAT_THEMES[0];
+const canUseChatTheme = (item, plusActive, proActive) => item.tier === 'free' || (item.tier === 'plus' && plusActive) || (item.tier === 'pro' && proActive);
 const subscriptionIsActive = (sub) => !!(sub?.active && (!sub.expiresAt || sub.expiresAt > Date.now()));
 const discountedEffectPrice = (price, plusActive, proActive = false) => {
   const discount = proActive ? LINK_PRO_SHOP_DISCOUNT : plusActive ? LINK_PLUS_SHOP_DISCOUNT : 0;
@@ -193,7 +215,7 @@ function initialData() {
   const keySD = threadKey('local_simi', 'demo_david');
 
   return {
-    version: 7,
+    version: 8,
     themeSetting: 'light',
     activeAccountId: 'local_simi',
     localAccountIds: ['local_simi', 'local_nela', 'local_alex'],
@@ -264,6 +286,7 @@ function initialData() {
     },
     chatKeys: {},
     silentChats: {},
+    chatThemes: { [keySN]: 'default', [keySD]: 'red' },
     profileViews: {
       local_simi: 12,
       local_nela: 8,
@@ -804,35 +827,55 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
         <SettingsRow theme={theme} icon="eye-off-outline" title="Ghost Mode" subtitle={proActive ? 'Read messages without sending Seen receipts' : 'LINK Pro feature · upgrade to unlock'} right={<Switch disabled={!proActive} value={!!privacy.ghostMode && proActive} onValueChange={v => setPrivacy({ ...privacy, ghostMode: v })} trackColor={{ false: theme.soft, true: '#7C5CFC' }} />} last />
       </View>
       <View style={[styles.gestureTip, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="return-up-back-outline" size={20} color={ACCENT} /><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Swipe to go back</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>On detail pages, swipe right from the left edge to go back. In chat, swipe a message right to reply.</Text></View></View>
-      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.7.0 demo</Text></Pressable>
+      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.8.0 demo</Text></Pressable>
     </ScrollView>
   );
 }
 
-function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply, quoted }) {
-  const sender = profiles[message.senderId];
+function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply, quoted, chatTheme }) {
   const reactions = message.reactions || [];
+  const outgoingTheme = chatTheme || CHAT_THEMES[0];
+  const outgoingText = outgoingTheme.textColor || '#FFFFFF';
+  const overlayColor = outgoingText === '#FFFFFF' ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.08)';
   const replyGesture = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 8 && gesture.dx > 0 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
     onPanResponderRelease: (_, gesture) => { if (gesture.dx > 54 && Math.abs(gesture.dy) < 70) onSwipeReply?.(); },
   }), [onSwipeReply]);
+
+  const content = (
+    <>
+      {quoted ? <View style={[styles.replyQuote, { borderLeftColor: mine ? (outgoingText === '#FFFFFF' ? 'rgba(255,255,255,.72)' : 'rgba(0,0,0,.32)') : outgoingTheme.colors[0] }]}><Text numberOfLines={1} style={{ color: mine ? (outgoingText === '#FFFFFF' ? 'rgba(255,255,255,.82)' : 'rgba(0,0,0,.62)') : theme.sub, fontSize: 11, fontWeight: '700' }}>{quoted.type === 'text' ? quoted.text : quoted.type === 'photo' ? '📷 Photo' : '🎙 Voice message'}</Text></View> : null}
+      {message.type === 'photo' ? <View style={[styles.photoMessage, { backgroundColor: mine ? overlayColor : theme.soft }]}>{message.uri ? <Image source={{ uri: message.uri }} style={styles.photoMessageImage} /> : <><Ionicons name="image-outline" size={28} color={mine ? outgoingText : theme.text} /><Text style={{ color: mine ? outgoingText : theme.text, fontWeight: '800', marginTop: 7 }}>Photo</Text></>}</View> : message.type === 'voice' ? <View style={styles.voiceMessage}><View style={[styles.voicePlay, { backgroundColor: mine ? overlayColor : theme.soft }]}><Ionicons name="play" size={16} color={mine ? outgoingText : theme.text} /></View><View style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: mine ? (outgoingText === '#FFFFFF' ? 'rgba(255,255,255,.48)' : 'rgba(0,0,0,.25)') : theme.border }} /><Text style={{ color: mine ? outgoingText : theme.text, fontSize: 11, fontWeight: '700' }}>{message.duration || '0:08'}</Text></View> : <Text style={[styles.bubbleText, { color: mine ? outgoingText : theme.text }]}>{message.text}</Text>}
+    </>
+  );
+
+  const mineBubbleStyle = [styles.bubble, styles.outgoingBubble];
+  const incomingBubbleStyle = [styles.bubble, styles.incomingBubble, { backgroundColor: theme.soft }];
+
   return (
     <View {...replyGesture.panHandlers} style={[styles.messageLine, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
-      <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? { backgroundColor: ACCENT } : { backgroundColor: theme.card, borderColor: theme.border, borderWidth: StyleSheet.hairlineWidth }]}> 
-        {quoted ? <View style={[styles.replyQuote, { borderLeftColor: mine ? 'rgba(255,255,255,.7)' : ACCENT }]}><Text numberOfLines={1} style={{ color: mine ? 'rgba(255,255,255,.78)' : theme.sub, fontSize: 11, fontWeight: '700' }}>{quoted.type === 'text' ? quoted.text : quoted.type === 'photo' ? '📷 Photo' : '🎙 Voice message'}</Text></View> : null}
-        {message.type === 'photo' ? <View style={[styles.photoMessage, { backgroundColor: mine ? 'rgba(255,255,255,.15)' : theme.soft }]}>{message.uri ? <Image source={{ uri: message.uri }} style={styles.photoMessageImage} /> : <><Ionicons name="image-outline" size={28} color={mine ? '#fff' : theme.text} /><Text style={{ color: mine ? '#fff' : theme.text, fontWeight: '800', marginTop: 7 }}>Photo</Text></>}</View> : message.type === 'voice' ? <View style={styles.voiceMessage}><Ionicons name="play" size={18} color={mine ? '#fff' : theme.text} /><View style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: mine ? 'rgba(255,255,255,.45)' : theme.border }} /><Text style={{ color: mine ? '#fff' : theme.text, fontSize: 11, fontWeight: '700' }}>{message.duration || '0:08'}</Text></View> : <Text style={[styles.bubbleText, { color: mine ? '#fff' : theme.text }]}>{message.text}</Text>}
-        <View style={styles.messageMeta}>{message.encrypted ? <Ionicons name="lock-closed" size={9} color={mine ? 'rgba(255,255,255,.58)' : theme.sub} /> : null}{message.expiresAt ? <Ionicons name="timer-outline" size={10} color={mine ? 'rgba(255,255,255,.62)' : theme.sub} /> : null}<Text style={[styles.bubbleTime, { color: mine ? 'rgba(255,255,255,.68)' : theme.sub }]}>{message.time}</Text>{mine ? <Ionicons name={message.readBy?.length > 1 ? 'checkmark-done' : 'checkmark'} size={12} color="rgba(255,255,255,.7)" /> : null}</View>
-        {reactions.length ? <View style={[styles.reactionBadge, { backgroundColor: theme.elevated }]}><Text>{reactions.map(r => r.emoji).join(' ')}</Text></View> : null}
-      </Pressable>
+      <View style={[styles.messageStack, { alignItems: mine ? 'flex-end' : 'flex-start' }]}>
+        <Pressable onLongPress={onLongPress} style={styles.bubblePressable}>
+          {mine ? (outgoingTheme.colors.length > 1 ? <LinearGradient colors={outgoingTheme.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={mineBubbleStyle}>{content}</LinearGradient> : <View style={[...mineBubbleStyle, { backgroundColor: outgoingTheme.colors[0] }]}>{content}</View>) : <View style={incomingBubbleStyle}>{content}</View>}
+          {reactions.length ? <View style={[styles.reactionBadge, { backgroundColor: theme.elevated, borderColor: theme.border }]}><Text>{reactions.map(r => r.emoji).join(' ')}</Text></View> : null}
+        </Pressable>
+        <View style={[styles.messageMetaOutside, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
+          {message.expiresAt ? <Ionicons name="timer-outline" size={10} color={theme.sub} /> : null}
+          <Text style={[styles.bubbleTime, { color: theme.sub }]}>{message.time}</Text>
+          {mine ? <Ionicons name={message.readBy?.length > 1 ? 'checkmark-done' : 'checkmark'} size={12} color={outgoingTheme.colors[0]} /> : null}
+        </View>
+      </View>
     </View>
   );
 }
 
-function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, onSend, onReact, onDelete, onOpenProfile, markRead, silentConfig, onOpenSilent, onOpenEncryptionInfo }) {
+function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, onSend, onReact, onDelete, onOpenProfile, markRead, silentConfig, onOpenSilent, onOpenEncryptionInfo, chatThemeId = 'default', onOpenTheme }) {
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
   const [typing, setTyping] = useState(false);
   const listRef = useRef(null);
+  const chatTheme = chatThemeById(chatThemeId);
+  const chatAccent = chatTheme.colors[0];
 
   useEffect(() => { markRead(); }, [person.id]);
   const send = (extra = {}) => {
@@ -868,20 +911,65 @@ function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, 
     <EdgeSwipeBack onBack={onBack}>
     <KeyboardAvoidingView style={[styles.flexOne, { backgroundColor: theme.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <SafeAreaView style={styles.flexOne}>
-        <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}><IconButton icon="chevron-back" onPress={onBack} theme={theme} /><Pressable onPress={() => onOpenProfile(person)} style={styles.chatHeaderPerson}><Avatar person={person} size={38} theme={theme} /><View><Text style={[styles.chatHeaderName, { color: theme.text }]}>{person.name}</Text><View style={{ marginTop: 3 }}><StatusBadge person={person} theme={theme} compact /></View></View></Pressable><IconButton icon={silentConfig?.enabled ? "timer" : "timer-outline"} onPress={onOpenSilent} theme={theme} filled={!!silentConfig?.enabled} /></View>
-        <Pressable onPress={onOpenEncryptionInfo} style={[styles.metContext, { backgroundColor: theme.soft }]}><Ionicons name="lock-closed" size={13} color={theme.success} /><Text style={[styles.metContextText, { color: theme.sub }]}>End-to-end encrypted · local prototype</Text><Ionicons name="information-circle-outline" size={13} color={theme.sub} /></Pressable>
-        {silentConfig?.enabled ? <Pressable onPress={onOpenSilent} style={[styles.silentBanner, { backgroundColor: 'rgba(108,92,231,.12)' }]}><Ionicons name="timer" size={14} color={ACCENT} /><Text style={[styles.silentBannerText, { color: ACCENT }]}>Silent Chat · new messages disappear after {formatSilentTimer(silentConfig.timerSeconds)}</Text><Ionicons name="chevron-forward" size={13} color={ACCENT} /></Pressable> : null}
-        <FlatList ref={listRef} data={messages} keyExtractor={m => m.id} contentContainerStyle={styles.messageList} showsVerticalScrollIndicator={false} onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: false })}
-          renderItem={({ item }) => <ChatMessage message={item} mine={item.senderId === activeProfile.id} theme={theme} profiles={profiles} quoted={messages.find(x => x.id === item.replyTo)} onSwipeReply={() => setReplyTo(item)} onLongPress={() => longPress(item)} />}
-          ListEmptyComponent={<View style={styles.emptyChat}><Ionicons name="sparkles-outline" size={30} color={ACCENT} /><Text style={[styles.emptyTitle, { color: theme.text }]}>New LINK</Text><Text style={[styles.emptyBody, { color: theme.sub }]}>Say hi to {person.name.split(' ')[0]}.</Text></View>}
-        />
-        {typing ? <View style={styles.typingLine}><View style={[styles.typingBubble, { backgroundColor: theme.card }]}><Text style={{ color: theme.sub, letterSpacing: 2 }}>•••</Text></View><Text style={{ color: theme.sub, fontSize: 10 }}>{person.name.split(' ')[0]} is typing</Text></View> : null}
-        {replyTo ? <View style={[styles.replyComposerBar, { backgroundColor: theme.soft }]}><View style={{ flex: 1 }}><Text style={{ color: ACCENT, fontWeight: '800', fontSize: 11 }}>Replying to {replyTo.senderId === activeProfile.id ? 'yourself' : profiles[replyTo.senderId]?.name}</Text><Text numberOfLines={1} style={{ color: theme.sub, fontSize: 12 }}>{replyTo.type === 'text' ? replyTo.text : replyTo.type}</Text></View><Pressable onPress={() => setReplyTo(null)}><Ionicons name="close" size={19} color={theme.sub} /></Pressable></View> : null}
-        <View style={[styles.composerWrap, { borderTopColor: theme.border, backgroundColor: theme.bg }]}><Pressable style={[styles.plusButton, { backgroundColor: theme.soft }]} onPress={() => Alert.alert('Send', 'Choose a local demo attachment.', [{ text: 'Photo', onPress: pickChatPhoto }, { text: 'Voice message', onPress: () => send({ type: 'voice', text: '', duration: '0:08' }) }, { text: 'Cancel', style: 'cancel' }])}><Ionicons name="add" size={24} color={theme.text} /></Pressable><View style={[styles.composer, { backgroundColor: theme.input }]}><TextInput value={text} onChangeText={setText} placeholder={silentConfig?.enabled ? `Silent message · ${formatSilentTimer(silentConfig.timerSeconds)}` : `Message ${person.name.split(' ')[0]}`} placeholderTextColor={theme.sub} style={[styles.composerInput, { color: theme.text }]} multiline maxLength={1000} /><Pressable onPress={() => send()} style={[styles.sendButton, { backgroundColor: text.trim() ? ACCENT : theme.soft }]}><Ionicons name="arrow-up" size={19} color={text.trim() ? '#fff' : theme.sub} /></Pressable></View></View>
+        <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}>
+          <BlurView intensity={Platform.OS === 'ios' ? 42 : 28} tint={theme.bg === dark.bg ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <View style={styles.chatHeaderSide}><IconButton icon="chevron-back" onPress={onBack} theme={theme} /></View>
+          <Pressable onPress={() => onOpenProfile(person)} style={styles.chatHeaderPersonCenter}>
+            <Avatar person={person} size={34} theme={theme} />
+            <View style={styles.chatHeaderIdentity}><Text numberOfLines={1} style={[styles.chatHeaderName, { color: theme.text }]}>{person.name}</Text><Ionicons name="chevron-down" size={12} color={theme.sub} /></View>
+          </Pressable>
+          <View style={[styles.chatHeaderSide, styles.chatHeaderRight]}><IconButton icon="color-palette-outline" onPress={onOpenTheme} theme={theme} /><IconButton icon={silentConfig?.enabled ? "timer" : "timer-outline"} onPress={onOpenSilent} theme={theme} filled={!!silentConfig?.enabled} /></View>
+        </View>
+        <Pressable onPress={onOpenEncryptionInfo} style={[styles.metContext, { backgroundColor: theme.soft }]}><Ionicons name="lock-closed" size={13} color={theme.success} /><Text style={[styles.metContextText, { color: theme.sub }]}>End-to-end encrypted</Text><Ionicons name="information-circle-outline" size={13} color={theme.sub} /></Pressable>
+        {silentConfig?.enabled ? <Pressable onPress={onOpenSilent} style={[styles.silentBanner, { backgroundColor: `${chatAccent}14` }]}><Ionicons name="timer" size={14} color={chatAccent} /><Text style={[styles.silentBannerText, { color: chatAccent }]}>Silent Chat · new messages disappear after {formatSilentTimer(silentConfig.timerSeconds)}</Text><Ionicons name="chevron-forward" size={13} color={chatAccent} /></Pressable> : null}
+        <View style={styles.chatBody}>
+          <LinearGradient pointerEvents="none" colors={[theme.bg, `${chatAccent}08`, theme.bg]} locations={[0, .56, 1]} style={StyleSheet.absoluteFill} />
+          <FlatList ref={listRef} data={messages} keyExtractor={m => m.id} contentContainerStyle={styles.messageList} showsVerticalScrollIndicator={false} onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: false })}
+            renderItem={({ item }) => <ChatMessage message={item} mine={item.senderId === activeProfile.id} theme={theme} profiles={profiles} chatTheme={chatTheme} quoted={messages.find(x => x.id === item.replyTo)} onSwipeReply={() => setReplyTo(item)} onLongPress={() => longPress(item)} />}
+            ListEmptyComponent={<View style={styles.emptyChat}><View style={[styles.emptyChatIcon, { backgroundColor: `${chatAccent}18` }]}><Ionicons name="chatbubble-ellipses" size={28} color={chatAccent} /></View><Text style={[styles.emptyTitle, { color: theme.text }]}>New LINK</Text><Text style={[styles.emptyBody, { color: theme.sub }]}>Say hi to {person.name.split(' ')[0]}.</Text></View>}
+          />
+          {typing ? <View style={styles.typingLine}><View style={[styles.typingBubble, { backgroundColor: theme.soft }]}><Text style={{ color: theme.sub, letterSpacing: 2 }}>•••</Text></View><Text style={{ color: theme.sub, fontSize: 10 }}>{person.name.split(' ')[0]} is typing</Text></View> : null}
+        </View>
+        {replyTo ? <View style={[styles.replyComposerBar, { backgroundColor: theme.soft }]}><View style={{ flex: 1 }}><Text style={{ color: chatAccent, fontWeight: '800', fontSize: 11 }}>Replying to {replyTo.senderId === activeProfile.id ? 'yourself' : profiles[replyTo.senderId]?.name}</Text><Text numberOfLines={1} style={{ color: theme.sub, fontSize: 12 }}>{replyTo.type === 'text' ? replyTo.text : replyTo.type}</Text></View><Pressable onPress={() => setReplyTo(null)}><Ionicons name="close" size={19} color={theme.sub} /></Pressable></View> : null}
+        <View style={[styles.composerWrap, { backgroundColor: theme.bg }]}><Pressable style={[styles.plusButton, { backgroundColor: theme.soft, borderColor: theme.border }]} onPress={() => Alert.alert('Send', 'Choose an attachment.', [{ text: 'Photo', onPress: pickChatPhoto }, { text: 'Voice message', onPress: () => send({ type: 'voice', text: '', duration: '0:08' }) }, { text: 'Cancel', style: 'cancel' }])}><Ionicons name="add" size={24} color={theme.text} /></Pressable><View style={[styles.composer, { backgroundColor: theme.card, borderColor: theme.border }]}><TextInput value={text} onChangeText={setText} placeholder={silentConfig?.enabled ? `Silent message · ${formatSilentTimer(silentConfig.timerSeconds)}` : 'iMessage'} placeholderTextColor={theme.sub} style={[styles.composerInput, { color: theme.text }]} multiline maxLength={1000} /><Pressable onPress={() => send()} style={[styles.sendButton, { backgroundColor: text.trim() ? chatAccent : theme.soft }]}><Ionicons name="arrow-up" size={19} color={text.trim() ? (chatTheme.textColor || '#fff') : theme.sub} /></Pressable></View></View>
       </SafeAreaView>
     </KeyboardAvoidingView>
     </EdgeSwipeBack>
   );
+}
+
+function ChatThemeModal({ visible, onClose, theme, currentId, plusActive, proActive, onSelect }) {
+  const groups = [
+    { key: 'free', title: 'Free', subtitle: 'Included for everyone.' },
+    { key: 'plus', title: 'LINK Plus', subtitle: 'Premium colors included with Plus and Pro.' },
+    { key: 'pro', title: 'LINK Pro', subtitle: 'Exclusive colors and gradients.' },
+  ];
+  const choose = (item) => {
+    if (!canUseChatTheme(item, plusActive, proActive)) {
+      Alert.alert(item.tier === 'pro' ? 'LINK Pro required' : 'LINK Plus required', `${item.name} is available with ${item.tier === 'pro' ? 'LINK Pro' : 'LINK Plus'}.`);
+      return;
+    }
+    onSelect(item.id);
+    onClose();
+  };
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><Pressable style={styles.modalBackdrop} onPress={onClose}><Pressable style={[styles.chatThemeSheet, { backgroundColor: theme.card }]} onPress={() => {}}>
+    <View style={styles.rowBetween}><View><Text style={[styles.sheetTitle, { color: theme.text }]}>Chat Theme</Text><Text style={[styles.sheetSub, { color: theme.sub }]}>Choose the color of your outgoing messages.</Text></View><IconButton icon="close" onPress={onClose} theme={theme} /></View>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+      {groups.map(group => <View key={group.key} style={{ marginTop: 18 }}><View style={styles.chatThemeSectionTitleRow}><View style={{ flex: 1 }}><Text style={[styles.chatThemeSectionTitle, { color: theme.text }]}>{group.title}</Text><Text style={[styles.chatThemeSectionSub, { color: theme.sub }]}>{group.subtitle}</Text></View>{group.key !== 'free' ? <View style={[styles.themeTierPill, { backgroundColor: group.key === 'pro' ? '#111318' : '#6C5CE7' }]}><Text style={styles.themeTierText}>{group.key === 'pro' ? 'PRO' : 'PLUS'}</Text></View> : null}</View>
+        <View style={styles.chatThemeGrid}>{CHAT_THEMES.filter(item => item.tier === group.key).map(item => {
+          const active = currentId === item.id;
+          const unlocked = canUseChatTheme(item, plusActive, proActive);
+          return <Pressable key={item.id} onPress={() => choose(item)} style={[styles.chatThemeCard, { backgroundColor: active ? theme.soft : theme.bg, borderColor: active ? item.colors[0] : theme.border, opacity: unlocked ? 1 : .72 }]}>
+            <View style={styles.chatThemePreview}>
+              <View style={[styles.chatThemeIncomingPreview, { backgroundColor: theme.soft }]} />
+              {item.colors.length > 1 ? <LinearGradient colors={item.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.chatThemeOutgoingPreview} /> : <View style={[styles.chatThemeOutgoingPreview, { backgroundColor: item.colors[0] }]} />}
+            </View>
+            <View style={styles.chatThemeCardBottom}><Text numberOfLines={1} style={[styles.chatThemeName, { color: theme.text }]}>{item.name}</Text>{active ? <Ionicons name="checkmark-circle" size={18} color={item.colors[0]} /> : !unlocked ? <Ionicons name="lock-closed" size={14} color={theme.sub} /> : null}</View>
+          </Pressable>;
+        })}</View>
+      </View>)}
+    </ScrollView>
+  </Pressable></Pressable></Modal>;
 }
 
 function ScannerModal({ visible, onClose, onScanned }) {
@@ -1279,6 +1367,7 @@ export default function App() {
   const [proOpen, setProOpen] = useState(false);
   const [silentChatOpen, setSilentChatOpen] = useState(false);
   const [encryptionInfoOpen, setEncryptionInfoOpen] = useState(false);
+  const [chatThemeOpen, setChatThemeOpen] = useState(false);
   const [decryptedActiveMessages, setDecryptedActiveMessages] = useState([]);
   const chatKeyCacheRef = useRef({});
 
@@ -1302,6 +1391,7 @@ export default function App() {
   const rawActiveMessages = activeThreadKey ? (data.conversations[activeThreadKey] || EMPTY_MESSAGES) : EMPTY_MESSAGES;
   const activeMessages = decryptedActiveMessages;
   const activeSilentConfig = activeThreadKey ? (data.silentChats?.[activeThreadKey] || { enabled: false, timerSeconds: 5 * 60 }) : { enabled: false, timerSeconds: 5 * 60 };
+  const activeChatThemeId = activeThreadKey ? (data.chatThemes?.[activeThreadKey] || 'default') : 'default';
   const profileModalPerson = profileModalId ? data.profiles[profileModalId] : null;
   const profileModalProActive = subscriptionIsActive(data.proSubscriptions?.[profileModalId]);
   const profileModalPlusActive = subscriptionIsActive(data.subscriptions?.[profileModalId]) || profileModalProActive;
@@ -1350,7 +1440,7 @@ export default function App() {
               mergedPrivacy[id] = { showStatus: true, showSocials: true, momentsToLinks: true, ghostMode: false, ...(mergedPrivacy[id] || {}) };
             });
             source = {
-              ...base, ...saved, version: 7,
+              ...base, ...saved, version: 8,
               profiles: mergedProfiles,
               privacy: mergedPrivacy,
               notifications: { ...base.notifications, ...(saved.notifications || {}) },
@@ -1362,6 +1452,7 @@ export default function App() {
               profileViews: mergedProfileViews,
               chatKeys: { ...base.chatKeys, ...(saved.chatKeys || {}) },
               silentChats: { ...base.silentChats, ...(saved.silentChats || {}) },
+              chatThemes: { ...base.chatThemes, ...(saved.chatThemes || {}) },
               notes: Array.isArray(saved.notes) ? saved.notes : base.notes,
               localAccountIds: localIds,
             };
@@ -1700,16 +1791,24 @@ ${text}` });
     mutate(prev => ({ ...prev, silentChats: { ...(prev.silentChats || {}), [activeThreadKey]: config } }));
   };
 
-  const resetDemo = () => Alert.alert('Reset LINK 0.7.0?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(await migrateConversationEncryption(initialData())); setActiveChatId(null); setTab('home'); } }]);
+  const saveChatTheme = (themeId) => {
+    if (!activeThreadKey) return;
+    const selected = chatThemeById(themeId);
+    if (!canUseChatTheme(selected, activePlus, activePro)) return;
+    mutate(prev => ({ ...prev, chatThemes: { ...(prev.chatThemes || {}), [activeThreadKey]: selected.id } }));
+  };
+
+  const resetDemo = () => Alert.alert('Reset LINK 0.8.0?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(await migrateConversationEncryption(initialData())); setActiveChatId(null); setTab('home'); } }]);
 
   if (!hydrated || !activeProfile) return <View style={[styles.loading, { backgroundColor: light.bg }]}><View style={styles.loadingLogo}><Text style={styles.loadingLogoText}>L*</Text></View><Text style={{ fontWeight: '900', color: light.text, fontSize: 17 }}>LINK</Text><Text style={{ color: light.sub, fontSize: 12 }}>{BUILD}</Text></View>;
 
   if (activeChatPerson) return <>
     <RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
-    <ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatPerson} messages={activeMessages} profiles={data.profiles} onBack={() => setActiveChatId(null)} onSend={sendMessage} onReact={reactMessage} onDelete={deleteMessage} onOpenProfile={openProfileModal} markRead={markRead} silentConfig={activeSilentConfig} onOpenSilent={() => setSilentChatOpen(true)} onOpenEncryptionInfo={() => setEncryptionInfoOpen(true)} />
+    <ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatPerson} messages={activeMessages} profiles={data.profiles} onBack={() => setActiveChatId(null)} onSend={sendMessage} onReact={reactMessage} onDelete={deleteMessage} onOpenProfile={openProfileModal} markRead={markRead} silentConfig={activeSilentConfig} onOpenSilent={() => setSilentChatOpen(true)} onOpenEncryptionInfo={() => setEncryptionInfoOpen(true)} chatThemeId={activeChatThemeId} onOpenTheme={() => setChatThemeOpen(true)} />
     <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPrivacy} plusActive={profileModalPlusActive} proActive={profileModalProActive} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} />
     <SilentChatModal visible={silentChatOpen} onClose={() => setSilentChatOpen(false)} theme={theme} config={activeSilentConfig} proActive={activePro} onSave={saveSilentConfig} />
     <EncryptionInfoModal visible={encryptionInfoOpen} onClose={() => setEncryptionInfoOpen(false)} theme={theme} />
+    <ChatThemeModal visible={chatThemeOpen} onClose={() => setChatThemeOpen(false)} theme={theme} currentId={activeChatThemeId} plusActive={activePlus} proActive={activePro} onSelect={saveChatTheme} />
   </>;
 
   return (
@@ -1738,6 +1837,7 @@ ${text}` });
       <LinkProModal visible={proOpen} onClose={() => setProOpen(false)} theme={theme} subscription={activeProSubscription} onActivate={activatePro} onCancel={cancelPro} />
       <SilentChatModal visible={silentChatOpen} onClose={() => setSilentChatOpen(false)} theme={theme} config={activeSilentConfig} proActive={activePro} onSave={saveSilentConfig} />
       <EncryptionInfoModal visible={encryptionInfoOpen} onClose={() => setEncryptionInfoOpen(false)} theme={theme} />
+      <ChatThemeModal visible={chatThemeOpen} onClose={() => setChatThemeOpen(false)} theme={theme} currentId={activeChatThemeId} plusActive={activePlus} proActive={activePro} onSelect={saveChatTheme} />
       <CustomStatusModal visible={customStatusOpen} onClose={() => setCustomStatusOpen(false)} theme={theme} profile={activeProfile} plusActive={activePlus} onSave={patch => updateActiveProfile({ ...activeProfile, ...patch })} />
     </View>
   );
@@ -1787,11 +1887,12 @@ const styles = StyleSheet.create({
   themeRow: { flexDirection: 'row', gap: 8 }, themeOption: { flex: 1, minHeight: 48, borderRadius: 16, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center' }, settingHint: { fontSize: 12, lineHeight: 18, marginTop: 9, marginBottom: 4 },
   settingsCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, overflow: 'hidden' }, settingsRow: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 14 }, settingsIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, settingsTitle: { fontWeight: '900', fontSize: 14 }, settingsSub: { fontSize: 11.5, lineHeight: 16, marginTop: 2 }, resetButton: { marginTop: 22, marginBottom: 18, height: 48, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   tabBarShell: { height: Platform.OS === 'ios' ? 88 : 80, paddingHorizontal: 13, paddingTop: 5, paddingBottom: Platform.OS === 'ios' ? 8 : 6, backgroundColor: 'transparent' }, tabGlass: { flex: 1, borderRadius: 27, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', shadowOpacity: .14, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 12 }, tabInner: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 5 }, tabItem: { flex: 1, height: 58, alignItems: 'center', justifyContent: 'center' }, tabActiveCapsule: { minWidth: 54, minHeight: 48, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 6 }, tabLabel: { fontSize: 8.5, fontWeight: '800', letterSpacing: -.1 }, centerTabGlass: { width: 48, height: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: .18, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } }, glassHighlight: { position: 'absolute', left: 18, right: 18, top: 1, height: 1, borderRadius: 999, opacity: .8 },
-  chatHeader: { height: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth }, chatHeaderPerson: { flexDirection: 'row', gap: 9, alignItems: 'center' }, chatHeaderName: { fontWeight: '900', fontSize: 14.5 }, chatHeaderStatus: { fontSize: 10.5, marginTop: 2, fontWeight: '800' }, metContext: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7, marginTop: 10 }, metContextText: { fontSize: 10.5, fontWeight: '700' },
-  messageList: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 18, flexGrow: 1 }, messageLine: { flexDirection: 'row', marginVertical: 5 }, bubble: { maxWidth: '82%', borderRadius: 20, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 7 }, bubbleText: { fontSize: 15, lineHeight: 20 }, messageMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 3, marginTop: 5 }, bubbleTime: { fontSize: 9 }, replyQuote: { borderLeftWidth: 2, paddingLeft: 7, marginBottom: 7, maxWidth: 220 }, reactionBadge: { position: 'absolute', bottom: -13, right: 8, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, shadowColor: '#000', shadowOpacity: .08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
-  photoMessage: { width: 190, height: 145, borderRadius: 15, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, photoMessageImage: { width: '100%', height: '100%' }, voiceMessage: { width: 190, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
-  emptyChat: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 120 }, typingLine: { paddingHorizontal: 16, paddingBottom: 5, flexDirection: 'row', alignItems: 'center', gap: 7 }, typingBubble: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 14 }, replyComposerBar: { marginHorizontal: 10, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  composerWrap: { flexDirection: 'row', gap: 8, alignItems: 'flex-end', padding: 10, borderTopWidth: StyleSheet.hairlineWidth }, plusButton: { width: 42, height: 42, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, composer: { flex: 1, minHeight: 44, maxHeight: 120, borderRadius: 18, flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 13, paddingRight: 5, paddingVertical: 5 }, composerInput: { flex: 1, fontSize: 15, maxHeight: 100, paddingTop: 7, paddingBottom: 7 }, sendButton: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginLeft: 5 },
+  chatHeader: { height: 78, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, overflow: 'hidden' }, chatHeaderSide: { width: 88, flexDirection: 'row', alignItems: 'center' }, chatHeaderRight: { justifyContent: 'flex-end', gap: 3 }, chatHeaderPersonCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 }, chatHeaderIdentity: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 150 }, chatHeaderName: { fontWeight: '800', fontSize: 12.5, letterSpacing: -.2 }, chatHeaderStatus: { fontSize: 10.5, marginTop: 2, fontWeight: '800' }, metContext: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, marginTop: 8 }, metContextText: { fontSize: 10.5, fontWeight: '700' },
+  chatBody: { flex: 1, overflow: 'hidden' }, messageList: { paddingHorizontal: 12, paddingTop: 16, paddingBottom: 18, flexGrow: 1 }, messageLine: { flexDirection: 'row', marginVertical: 3.5 }, messageStack: { maxWidth: '84%' }, bubblePressable: { position: 'relative' }, bubble: { borderRadius: 22, paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, overflow: 'hidden' }, outgoingBubble: { borderBottomRightRadius: 7 }, incomingBubble: { borderBottomLeftRadius: 7 }, bubbleText: { fontSize: 16, lineHeight: 21.5, letterSpacing: -.15 }, messageMetaOutside: { minHeight: 16, flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2, paddingHorizontal: 5 }, bubbleTime: { fontSize: 9.5, fontWeight: '600' }, replyQuote: { borderLeftWidth: 2, paddingLeft: 7, marginBottom: 7, maxWidth: 220 }, reactionBadge: { position: 'absolute', bottom: -12, right: 7, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, borderWidth: StyleSheet.hairlineWidth, shadowColor: '#000', shadowOpacity: .08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  photoMessage: { width: 205, height: 154, borderRadius: 17, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, photoMessageImage: { width: '100%', height: '100%' }, voiceMessage: { width: 205, flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 3 }, voicePlay: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  emptyChat: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 120 }, emptyChatIcon: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }, typingLine: { paddingHorizontal: 16, paddingBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 7 }, typingBubble: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 }, replyComposerBar: { marginHorizontal: 10, marginBottom: 4, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  composerWrap: { flexDirection: 'row', gap: 8, alignItems: 'flex-end', paddingHorizontal: 10, paddingTop: 7, paddingBottom: Platform.OS === 'ios' ? 7 : 10 }, plusButton: { width: 40, height: 40, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', marginBottom: 1 }, composer: { flex: 1, minHeight: 42, maxHeight: 120, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 14, paddingRight: 5, paddingVertical: 4 }, composerInput: { flex: 1, fontSize: 15.5, maxHeight: 100, paddingTop: 7, paddingBottom: 7, letterSpacing: -.1 }, sendButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 5, marginBottom: 1 },
+  chatThemeSheet: { width: '100%', maxWidth: 460, maxHeight: '86%', borderRadius: 30, padding: 18 }, chatThemeSectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }, chatThemeSectionTitle: { fontSize: 15, fontWeight: '900' }, chatThemeSectionSub: { fontSize: 10.5, lineHeight: 14, marginTop: 2 }, themeTierPill: { minHeight: 24, paddingHorizontal: 9, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }, themeTierText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: .7 }, chatThemeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 }, chatThemeCard: { width: '48.5%', minHeight: 112, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, padding: 10 }, chatThemePreview: { height: 58, position: 'relative', justifyContent: 'center' }, chatThemeIncomingPreview: { width: '58%', height: 20, borderRadius: 10, borderBottomLeftRadius: 4, alignSelf: 'flex-start' }, chatThemeOutgoingPreview: { width: '68%', height: 24, borderRadius: 12, borderBottomRightRadius: 4, alignSelf: 'flex-end', marginTop: 6 }, chatThemeCardBottom: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }, chatThemeName: { flex: 1, fontSize: 11.5, fontWeight: '800' },
   scannerPage: { flex: 1, backgroundColor: '#08090C' }, scannerHeader: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, scannerTitle: { color: '#fff', fontSize: 28, fontWeight: '900', letterSpacing: -.8 }, scannerSub: { color: 'rgba(255,255,255,.58)', marginTop: 3, fontSize: 13 }, scannerClose: { width: 44, height: 44, borderRadius: 16, backgroundColor: 'rgba(255,255,255,.12)', alignItems: 'center', justifyContent: 'center' }, cameraShell: { flex: 1, marginHorizontal: 14, borderRadius: 30, overflow: 'hidden', backgroundColor: '#15171C', alignItems: 'center', justifyContent: 'center' }, scanFrame: { position: 'absolute', width: 250, height: 250 }, corner: { position: 'absolute', width: 40, height: 40, borderColor: '#fff' }, cornerTL: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 18 }, cornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 18 }, cornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 18 }, cornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 18 }, scannerFoot: { color: 'rgba(255,255,255,.56)', textAlign: 'center', fontSize: 12, paddingVertical: 14 }, scanAgainButton: { alignSelf: 'center', marginBottom: 10, paddingHorizontal: 18, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,.14)', borderRadius: 14 }, permissionState: { alignItems: 'center', paddingHorizontal: 34 }, permissionTitle: { color: '#fff', fontSize: 18, fontWeight: '900', marginTop: 15 }, permissionBody: { color: 'rgba(255,255,255,.58)', fontSize: 13, textAlign: 'center', lineHeight: 19, marginTop: 7 }, permissionButton: { backgroundColor: '#fff', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 15, marginTop: 17 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.62)', alignItems: 'center', justifyContent: 'center', padding: 18 }, ownCardModal: { width: '100%', maxWidth: 420, borderRadius: 30, padding: 20 }, qrWrapLarge: { alignSelf: 'center', padding: 15, borderRadius: 25, marginTop: 24 }, modalCardName: { fontSize: 25, fontWeight: '900', textAlign: 'center', marginTop: 18, letterSpacing: -.7 }, modalCardUser: { fontSize: 14, textAlign: 'center', marginTop: 3 }, modalCardHint: { fontSize: 12, lineHeight: 18, textAlign: 'center', paddingHorizontal: 28, marginTop: 13, marginBottom: 4 },
   sheetCard: { width: '100%', maxWidth: 440, borderRadius: 28, padding: 18, maxHeight: '82%' }, sheetTitle: { fontSize: 24, fontWeight: '900', letterSpacing: -.7 }, sheetSub: { fontSize: 12, marginTop: 3 }, notificationRow: { minHeight: 70, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 }, notificationIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
