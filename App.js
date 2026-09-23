@@ -33,7 +33,7 @@ import QRCode from 'react-native-qrcode-svg';
 const STORAGE_KEY = '@link_social_core_v2';
 const ACCENT = '#6C5CE7';
 const EMPTY_MESSAGES = Object.freeze([]);
-const BUILD = 'LINK 0.9.2';
+const BUILD = 'LINK 0.9.3';
 const LINK_PLUS_PLANS = {
   monthly: { id: 'monthly', label: 'Monthly', price: 79, periodLabel: 'month', bonusCoins: 400, days: 30 },
   annual: { id: 'annual', label: 'Annual', price: 649, periodLabel: 'year', bonusCoins: 1500, days: 365 },
@@ -291,7 +291,7 @@ function initialData() {
   const keySD = threadKey('local_simi', 'demo_david');
 
   return {
-    version: 11,
+    version: 12,
     themeSetting: 'light',
     activeAccountId: 'local_simi',
     localAccountIds: ['local_simi', 'local_nela', 'local_alex', 'local_geezuz'],
@@ -884,6 +884,91 @@ function CreateGroupModal({ visible, onClose, theme, activeProfile, profiles, co
   </View></View></Modal>;
 }
 
+
+function GroupInfoModal({ visible, onClose, theme, group, profiles, activeId, onRename, onToggleEveryone }) {
+  const [draftName, setDraftName] = useState(group?.name || '');
+  useEffect(() => { if (visible) setDraftName(group?.name || ''); }, [visible, group?.name]);
+  if (!group) return null;
+  const isOwner = group.ownerId === activeId;
+  const canEditName = isOwner || !!group.everyoneCanEditName;
+  const owner = profiles[group.ownerId];
+  const members = (group.memberIds || []).map(id => profiles[id]).filter(Boolean);
+  const saveName = () => {
+    const clean = draftName.trim();
+    if (!canEditName) return;
+    if (!clean) return Alert.alert('Group name required', 'Enter a name for this group.');
+    onRename?.(clean);
+  };
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.groupInfoCard, { backgroundColor: theme.card }]}>
+          <View style={styles.rowBetween}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={[styles.sheetTitle, { color: theme.text }]}>Group settings</Text>
+              <Text style={[styles.sheetSub, { color: theme.sub }]}>Manage the conversation and group name.</Text>
+            </View>
+            <IconButton icon="close" onPress={onClose} theme={theme} />
+          </View>
+
+          <View style={styles.groupInfoHero}>
+            <GroupAvatar group={group} profiles={profiles} theme={theme} size={66} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text numberOfLines={1} style={[styles.groupInfoTitle, { color: theme.text }]}>{group.name}</Text>
+              <Text style={[styles.groupInfoSub, { color: theme.sub }]}>{members.length} members · Created by {owner?.name || 'LINK member'}</Text>
+            </View>
+          </View>
+
+          <Text style={[styles.groupPickerLabel, { color: theme.text }]}>Group name</Text>
+          <View style={[styles.groupNameInputWrap, { backgroundColor: theme.input, borderColor: canEditName ? theme.border : 'transparent', opacity: canEditName ? 1 : .72 }]}>
+            <Ionicons name="chatbubbles-outline" size={18} color={theme.sub} />
+            <TextInput
+              value={draftName}
+              onChangeText={setDraftName}
+              editable={canEditName}
+              placeholder="Group name"
+              placeholderTextColor={theme.sub}
+              style={[styles.groupNameInput, { color: theme.text }]}
+              maxLength={42}
+              returnKeyType="done"
+              onSubmitEditing={saveName}
+            />
+            {canEditName ? <Pressable onPress={saveName} style={[styles.groupNameSave, { backgroundColor: theme.inverse }]}><Text style={{ color: theme.inverseText, fontWeight: '900', fontSize: 11 }}>Save</Text></Pressable> : <Ionicons name="lock-closed" size={16} color={theme.sub} />}
+          </View>
+          {!canEditName ? <Text style={[styles.groupPermissionHint, { color: theme.sub }]}>Only the group creator can change the name.</Text> : null}
+
+          <View style={[styles.groupPermissionCard, { backgroundColor: theme.soft, borderColor: theme.border }]}>
+            <View style={[styles.groupPermissionIcon, { backgroundColor: theme.card }]}><Ionicons name="people-outline" size={19} color={theme.text} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.settingsTitle, { color: theme.text }]}>Everyone</Text>
+              <Text style={[styles.settingsSub, { color: theme.sub }]}>{group.everyoneCanEditName ? 'Every member can change the group name.' : 'Only the creator can change the group name.'}</Text>
+            </View>
+            <Switch
+              disabled={!isOwner}
+              value={!!group.everyoneCanEditName}
+              onValueChange={onToggleEveryone}
+              trackColor={{ false: theme.border, true: ACCENT }}
+            />
+          </View>
+          {!isOwner ? <Text style={[styles.groupPermissionHint, { color: theme.sub }]}>Only {owner?.name || 'the creator'} can change this permission.</Text> : null}
+
+          <Text style={[styles.groupPickerLabel, { color: theme.text }]}>Members</Text>
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 270 }}>
+            {members.map(person => <View key={person.id} style={[styles.groupMemberRow, { borderBottomColor: theme.border }]}>
+              <Avatar person={person} size={42} theme={theme} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text numberOfLines={1} style={[styles.personName, { color: theme.text }]}>{person.name}</Text>
+                <Text numberOfLines={1} style={[styles.personSub, { color: theme.sub }]}>{person.username}</Text>
+              </View>
+              {person.id === group.ownerId ? <View style={[styles.ownerPill, { backgroundColor: theme.soft }]}><Text style={[styles.ownerPillText, { color: theme.text }]}>Creator</Text></View> : null}
+            </View>)}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ThemeOption({ mode, active, label, icon, onPress, theme }) {
   return <Pressable onPress={() => onPress(mode)} style={[styles.themeOption, { backgroundColor: active ? theme.inverse : theme.soft }]}><Ionicons name={icon} size={18} color={active ? theme.inverseText : theme.text} /><Text style={{ color: active ? theme.inverseText : theme.text, fontWeight: '800', fontSize: 13 }}>{label}</Text></Pressable>;
 }
@@ -1026,13 +1111,13 @@ function ProfileScreen({ theme, activeProfile, updateProfile, themeSetting, setT
         <SettingsRow theme={theme} icon="eye-off-outline" title="Ghost Mode" subtitle={proActive ? 'Read messages without sending Seen receipts' : 'LINK Pro feature · upgrade to unlock'} right={<Switch disabled={!proActive} value={!!privacy.ghostMode && proActive} onValueChange={v => setPrivacy({ ...privacy, ghostMode: v })} trackColor={{ false: theme.soft, true: '#7C5CFC' }} />} last />
       </View>
       <View style={[styles.gestureTip, { backgroundColor: theme.card, borderColor: theme.border }]}><Ionicons name="return-up-back-outline" size={20} color={ACCENT} /><View style={{ flex: 1 }}><Text style={[styles.settingsTitle, { color: theme.text }]}>Swipe to go back</Text><Text style={[styles.settingsSub, { color: theme.sub }]}>On detail pages, swipe right from the left edge to go back. In chat, swipe a message right to reply.</Text></View></View>
-      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.9.2 demo</Text></Pressable>
+      <Pressable onPress={resetDemo} style={[styles.resetButton, { borderColor: theme.border }]}><Ionicons name="refresh" size={18} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800' }}>Reset LINK 0.9.3 demo</Text></Pressable>
     </ScrollView>
     <AdminCustomizationModal visible={adminCustomizeOpen} onClose={() => setAdminCustomizeOpen(false)} theme={theme} profile={activeProfile} onUpdate={updateProfile} onPickGif={pickProfileGif} />
   </>);
 }
 
-function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply, onDoubleTap, quoted, chatTheme, showSender = false }) {
+function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply, onDoubleTap, quoted, chatTheme, groupMode = false, showSender = false, showAvatar = false, showMeta = true }) {
   const reactions = message.reactions || [];
   const lastTapRef = useRef(0);
   const handleTap = () => { const now = Date.now(); if (now - lastTapRef.current < 320) { lastTapRef.current = 0; onDoubleTap?.(); } else { lastTapRef.current = now; } };
@@ -1059,10 +1144,18 @@ function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply
   const mineBubbleStyle = [styles.bubble, styles.outgoingBubble];
   const incomingBubbleStyle = [styles.bubble, styles.incomingBubble, { backgroundColor: theme.soft }];
 
+  const sender = profiles[message.senderId];
+  const avatarSlot = groupMode ? (
+    <View style={[styles.groupMessageAvatarSlot, mine ? styles.groupMessageAvatarRight : styles.groupMessageAvatarLeft]}>
+      {showAvatar ? <Avatar person={sender || { id: message.senderId, name: 'LINK member' }} size={28} theme={theme} /> : null}
+    </View>
+  ) : null;
+
   return (
-    <View {...replyGesture.panHandlers} style={[styles.messageLine, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
-      <View style={[styles.messageStack, { alignItems: mine ? 'flex-end' : 'flex-start' }]}>
-        {showSender && !mine ? <Text style={[styles.groupSenderName, { color: theme.sub }]}>{profiles[message.senderId]?.name || 'LINK member'}</Text> : null}
+    <View {...replyGesture.panHandlers} style={[styles.messageLine, groupMode && styles.groupMessageLine, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
+      {groupMode && !mine ? avatarSlot : null}
+      <View style={[styles.messageStack, groupMode && styles.groupMessageStack, { alignItems: mine ? 'flex-end' : 'flex-start' }]}>
+        {groupMode && showSender ? <Text style={[styles.groupSenderName, mine && styles.groupSenderNameMine, { color: theme.sub }]}>{mine ? 'You' : (sender?.name || 'LINK member')}</Text> : null}
         <Pressable onPress={handleTap} onLongPress={handleLongPress} delayLongPress={420} style={[styles.bubblePressable, mine ? styles.outgoingPressable : styles.incomingPressable]}>
           <View style={styles.bubbleShell}>
             {mine
@@ -1073,20 +1166,22 @@ function ChatMessage({ message, mine, theme, profiles, onLongPress, onSwipeReply
             {reactions.length ? <View style={[styles.reactionBadge, { backgroundColor: theme.elevated, borderColor: theme.border }]}><Text>{reactions.map(r => r.emoji).join(' ')}</Text></View> : null}
           </View>
         </Pressable>
-        <View style={[styles.messageMetaOutside, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
+        {showMeta ? <View style={[styles.messageMetaOutside, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
           {message.expiresAt ? <Ionicons name="timer-outline" size={10} color={theme.sub} /> : null}
           <Text style={[styles.bubbleTime, { color: theme.sub }]}>{message.time}</Text>
           {mine ? <Ionicons name={message.readBy?.length > 1 ? 'checkmark-done' : 'checkmark'} size={12} color={outgoingTheme.colors[0]} /> : null}
-        </View>
+        </View> : <View style={styles.groupMessageTightSpacer} />}
       </View>
+      {groupMode && mine ? avatarSlot : null}
     </View>
   );
 }
 
-function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, onSend, onReact, onDelete, onOpenProfile, markRead, silentConfig, onOpenSilent, onOpenEncryptionInfo, chatThemeId = 'default', chatThemeScope = 'messages', onOpenTheme, isGroup = false, groupMembers = [], doubleTapEmoji = '❤️' }) {
+function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, onSend, onReact, onDelete, onOpenProfile, markRead, silentConfig, onOpenSilent, onOpenEncryptionInfo, chatThemeId = 'default', chatThemeScope = 'messages', onOpenTheme, isGroup = false, group = null, groupMembers = [], onRenameGroup, onToggleGroupEveryone, doubleTapEmoji = '❤️' }) {
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
   const [typing, setTyping] = useState(false);
+  const [groupInfoOpen, setGroupInfoOpen] = useState(false);
   const listRef = useRef(null);
   const chatTheme = chatThemeById(chatThemeId);
   const chatAccent = chatTheme.colors[0];
@@ -1128,7 +1223,7 @@ function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, 
         <View style={[styles.chatHeader, { borderBottomColor: theme.border }]}>
           <BlurView intensity={Platform.OS === 'ios' ? 42 : 28} tint={theme.bg === dark.bg ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <View style={styles.chatHeaderSide}><IconButton icon="chevron-back" onPress={onBack} theme={theme} /></View>
-          <Pressable onPress={() => isGroup ? Alert.alert(person.name, `${groupMembers.length} members · ${groupMembers.map(p => p.name).join(', ')}`) : onOpenProfile(person)} style={styles.chatHeaderPersonCenter}>
+          <Pressable onPress={() => isGroup ? setGroupInfoOpen(true) : onOpenProfile(person)} style={styles.chatHeaderPersonCenter}>
             {isGroup ? <GroupAvatar group={{ memberIds: groupMembers.map(p => p.id) }} profiles={profiles} theme={theme} size={34} /> : <Avatar person={person} size={34} theme={theme} />}
             <View style={styles.chatHeaderIdentity}><Text numberOfLines={1} style={[styles.chatHeaderName, { color: theme.text }]}>{person.name}</Text><Ionicons name="chevron-down" size={12} color={theme.sub} /></View>
           </Pressable>
@@ -1139,7 +1234,13 @@ function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, 
         <View style={styles.chatBody}>
           {chatThemeScope === 'full' ? <LinearGradient pointerEvents="none" colors={[theme.bg, `${chatAccent}08`, theme.bg]} locations={[0, .56, 1]} style={StyleSheet.absoluteFill} /> : null}
           <FlatList ref={listRef} data={messages} keyExtractor={m => m.id} contentContainerStyle={styles.messageList} showsVerticalScrollIndicator={false} onContentSizeChange={() => listRef.current?.scrollToEnd?.({ animated: false })}
-            renderItem={({ item }) => <ChatMessage message={item} mine={item.senderId === activeProfile.id} theme={theme} profiles={profiles} chatTheme={chatTheme} quoted={messages.find(x => x.id === item.replyTo)} onSwipeReply={() => setReplyTo(item)} onDoubleTap={() => onReact(person.id, item.id, doubleTapEmoji)} onLongPress={() => longPress(item)} showSender={isGroup} />}
+            renderItem={({ item, index }) => {
+              const prev = messages[index - 1];
+              const next = messages[index + 1];
+              const sameAsPrev = !!prev && prev.senderId === item.senderId;
+              const sameAsNext = !!next && next.senderId === item.senderId;
+              return <ChatMessage message={item} mine={item.senderId === activeProfile.id} theme={theme} profiles={profiles} chatTheme={chatTheme} quoted={messages.find(x => x.id === item.replyTo)} onSwipeReply={() => setReplyTo(item)} onDoubleTap={() => onReact(person.id, item.id, doubleTapEmoji)} onLongPress={() => longPress(item)} groupMode={isGroup} showSender={isGroup && !sameAsPrev} showAvatar={isGroup && !sameAsNext} showMeta={!isGroup || !sameAsNext} />;
+            }}
             ListEmptyComponent={<View style={styles.emptyChat}><View style={[styles.emptyChatIcon, { backgroundColor: `${chatAccent}18` }]}><Ionicons name={isGroup ? 'people' : 'chatbubble-ellipses'} size={28} color={chatAccent} /></View><Text style={[styles.emptyTitle, { color: theme.text }]}>{isGroup ? 'New Group' : 'New LINK'}</Text><Text style={[styles.emptyBody, { color: theme.sub }]}>{isGroup ? 'Send the first message to the group.' : `Say hi to ${person.name.split(' ')[0]}.`}</Text></View>}
           />
           {typing ? <View style={styles.typingLine}><View style={[styles.typingBubble, { backgroundColor: theme.soft }]}><Text style={{ color: theme.sub, letterSpacing: 2 }}>•••</Text></View><Text style={{ color: theme.sub, fontSize: 10 }}>{person.name.split(' ')[0]} is typing</Text></View> : null}
@@ -1147,6 +1248,7 @@ function ChatScreen({ theme, activeProfile, person, messages, profiles, onBack, 
         {replyTo ? <View style={[styles.replyComposerBar, { backgroundColor: theme.soft }]}><View style={{ flex: 1 }}><Text style={{ color: chatAccent, fontWeight: '800', fontSize: 11 }}>Replying to {replyTo.senderId === activeProfile.id ? 'yourself' : profiles[replyTo.senderId]?.name}</Text><Text numberOfLines={1} style={{ color: theme.sub, fontSize: 12 }}>{replyTo.type === 'text' ? replyTo.text : replyTo.type}</Text></View><Pressable onPress={() => setReplyTo(null)}><Ionicons name="close" size={19} color={theme.sub} /></Pressable></View> : null}
         <View style={[styles.composerWrap, { backgroundColor: theme.bg }]}><Pressable style={[styles.plusButton, { backgroundColor: theme.soft, borderColor: theme.border }]} onPress={() => Alert.alert('Send', 'Choose an attachment.', [{ text: 'Photo', onPress: pickChatPhoto }, { text: 'Voice message', onPress: () => send({ type: 'voice', text: '', duration: '0:08' }) }, { text: 'Cancel', style: 'cancel' }])}><Ionicons name="add" size={24} color={theme.text} /></Pressable><View style={[styles.composer, { backgroundColor: theme.card, borderColor: theme.border }]}><TextInput value={text} onChangeText={setText} placeholder={silentConfig?.enabled ? `Silent message · ${formatSilentTimer(silentConfig.timerSeconds)}` : 'Message'} placeholderTextColor={theme.sub} style={[styles.composerInput, { color: theme.text }]} multiline maxLength={1000} /><Pressable onPress={() => send()} style={[styles.sendButton, { backgroundColor: text.trim() ? chatAccent : theme.soft }]}><Ionicons name="arrow-up" size={19} color={text.trim() ? (chatTheme.textColor || '#fff') : theme.sub} /></Pressable></View></View>
       </SafeAreaView>
+      {isGroup ? <GroupInfoModal visible={groupInfoOpen} onClose={() => setGroupInfoOpen(false)} theme={theme} group={group} profiles={profiles} activeId={activeProfile.id} onRename={onRenameGroup} onToggleEveryone={onToggleGroupEveryone} /> : null}
     </KeyboardAvoidingView>
     </EdgeSwipeBack>
   );
@@ -1721,7 +1823,7 @@ export default function App() {
               mergedPrivacy[id] = { showStatus: true, showSocials: true, momentsToLinks: true, ghostMode: false, ...(mergedPrivacy[id] || {}) };
             });
             source = {
-              ...base, ...saved, version: 11,
+              ...base, ...saved, version: 12,
               profiles: mergedProfiles,
               groups: { ...(base.groups || {}), ...(saved.groups || {}) },
               doubleTapReactions: { ...(base.doubleTapReactions || {}), ...(saved.doubleTapReactions || {}) },
@@ -1919,7 +2021,7 @@ export default function App() {
     const key = groupThreadKey(groupId);
     mutate(prev => ({
       ...prev,
-      groups: { ...(prev.groups || {}), [groupId]: { id: groupId, name: name || 'New Group', ownerId: prev.activeAccountId, memberIds: allMembers, createdAt: Date.now() } },
+      groups: { ...(prev.groups || {}), [groupId]: { id: groupId, name: name || 'New Group', ownerId: prev.activeAccountId, memberIds: allMembers, everyoneCanEditName: false, createdAt: Date.now() } },
       conversations: { ...prev.conversations, [key]: [] },
       silentChats: { ...(prev.silentChats || {}), [key]: { enabled: false, timerSeconds: 5 * 60 } },
       chatThemes: { ...(prev.chatThemes || {}), [key]: 'default' },
@@ -1927,6 +2029,27 @@ export default function App() {
     }));
     setActiveChatId(null);
     setActiveGroupId(groupId);
+  };
+
+
+  const renameGroup = (groupId, nextName) => {
+    const clean = String(nextName || '').trim().slice(0, 42);
+    if (!clean) return;
+    mutate(prev => {
+      const group = prev.groups?.[groupId];
+      if (!group || !(group.memberIds || []).includes(prev.activeAccountId)) return prev;
+      const canEdit = group.ownerId === prev.activeAccountId || !!group.everyoneCanEditName;
+      if (!canEdit) return prev;
+      return { ...prev, groups: { ...(prev.groups || {}), [groupId]: { ...group, name: clean } } };
+    });
+  };
+
+  const toggleGroupEveryone = (groupId, enabled) => {
+    mutate(prev => {
+      const group = prev.groups?.[groupId];
+      if (!group || group.ownerId !== prev.activeAccountId) return prev;
+      return { ...prev, groups: { ...(prev.groups || {}), [groupId]: { ...group, everyoneCanEditName: !!enabled } } };
+    });
   };
 
   const openProfileModal = (person) => {
@@ -2161,7 +2284,7 @@ ${text}` });
     mutate(prev => ({ ...prev, chatThemeScopes: { ...(prev.chatThemeScopes || {}), [activeThreadKey]: scope === 'full' ? 'full' : 'messages' } }));
   };
 
-  const resetDemo = () => Alert.alert('Reset LINK 0.9.2?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(await migrateConversationEncryption(initialData())); setActiveChatId(null); setActiveGroupId(null); setTab('home'); } }]);
+  const resetDemo = () => Alert.alert('Reset LINK 0.9.3?', 'This clears all local accounts, requests, Moments and chats.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: async () => { await AsyncStorage.removeItem(STORAGE_KEY); setData(await migrateConversationEncryption(initialData())); setActiveChatId(null); setActiveGroupId(null); setTab('home'); } }]);
 
   if (!hydrated || !activeProfile) return <View style={[styles.loading, { backgroundColor: light.bg }]}><View style={styles.loadingLogo}><Text style={styles.loadingLogoText}>L*</Text></View><Text style={{ fontWeight: '900', color: light.text, fontSize: 17 }}>LINK</Text><Text style={{ color: light.sub, fontSize: 12 }}>{BUILD}</Text></View>;
 
@@ -2174,7 +2297,7 @@ ${text}` });
 
   if (activeChatTarget) return <>
     <RNStatusBar barStyle={activeMode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.bg} />
-    <ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatTarget} messages={activeMessages} profiles={data.profiles} onBack={() => { setActiveChatId(null); setActiveGroupId(null); }} onSend={activeGroup ? sendGroupMessage : sendMessage} onReact={activeGroup ? reactGroupMessage : reactMessage} onDelete={activeGroup ? deleteGroupMessage : deleteMessage} onOpenProfile={openProfileModal} markRead={markRead} silentConfig={activeSilentConfig} onOpenSilent={() => setSilentChatOpen(true)} onOpenEncryptionInfo={() => setEncryptionInfoOpen(true)} chatThemeId={activeChatThemeId} chatThemeScope={activeChatThemeScope} onOpenTheme={() => setChatThemeOpen(true)} isGroup={!!activeGroup} groupMembers={activeGroupMembers} doubleTapEmoji={activeDoubleTapEmoji} />
+    <ChatScreen theme={theme} activeProfile={activeProfile} person={activeChatTarget} messages={activeMessages} profiles={data.profiles} onBack={() => { setActiveChatId(null); setActiveGroupId(null); }} onSend={activeGroup ? sendGroupMessage : sendMessage} onReact={activeGroup ? reactGroupMessage : reactMessage} onDelete={activeGroup ? deleteGroupMessage : deleteMessage} onOpenProfile={openProfileModal} markRead={markRead} silentConfig={activeSilentConfig} onOpenSilent={() => setSilentChatOpen(true)} onOpenEncryptionInfo={() => setEncryptionInfoOpen(true)} chatThemeId={activeChatThemeId} chatThemeScope={activeChatThemeScope} onOpenTheme={() => setChatThemeOpen(true)} isGroup={!!activeGroup} group={activeGroup} groupMembers={activeGroupMembers} onRenameGroup={(name) => activeGroup && renameGroup(activeGroup.id, name)} onToggleGroupEveryone={(enabled) => activeGroup && toggleGroupEveryone(activeGroup.id, enabled)} doubleTapEmoji={activeDoubleTapEmoji} />
     {!activeGroup ? <PersonProfileModal visible={!!profileModalId} onClose={() => setProfileModalId(null)} theme={theme} person={profileModalPerson} connected={(data.relationships[data.activeAccountId] || []).includes(profileModalId)} privacy={profileModalPrivacy} plusActive={profileModalPlusActive} proActive={profileModalProActive} favorite={favoriteIds.includes(profileModalId)} onToggleFavorite={() => profileModalId && toggleFavorite(profileModalId)} onWave={() => profileModalId && sendWave(profileModalId)} onChat={() => profileModalPerson && openChat(profileModalPerson)} viewerIsAdmin={!!activeProfile.isAdmin} moderationState={profileModalModeration} onAdminBan={() => profileModalId && adminBan(profileModalId)} onAdminUnban={() => profileModalId && adminUnban(profileModalId)} onAdminMute={() => profileModalPerson && Alert.alert('Mute ' + profileModalPerson.name, 'Choose duration.', [{ text: '15 minutes', onPress: () => adminMute(profileModalId, 15 * 60 * 1000) }, { text: '1 hour', onPress: () => adminMute(profileModalId, 60 * 60 * 1000) }, { text: '24 hours', onPress: () => adminMute(profileModalId, 24 * 60 * 60 * 1000) }, { text: 'Indefinitely', style: 'destructive', onPress: () => adminMute(profileModalId, -1) }, { text: 'Cancel', style: 'cancel' }])} onAdminUnmute={() => profileModalId && adminUnmute(profileModalId)} /> : null}
     <SilentChatModal visible={silentChatOpen} onClose={() => setSilentChatOpen(false)} theme={theme} config={activeSilentConfig} proActive={activePro} onSave={saveSilentConfig} />
     <EncryptionInfoModal visible={encryptionInfoOpen} onClose={() => setEncryptionInfoOpen(false)} theme={theme} />
@@ -2262,7 +2385,7 @@ const styles = StyleSheet.create({
   settingsCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 22, overflow: 'hidden' }, settingsRow: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 14 }, settingsIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, settingsTitle: { fontWeight: '900', fontSize: 14 }, settingsSub: { fontSize: 11.5, lineHeight: 16, marginTop: 2 }, resetButton: { marginTop: 22, marginBottom: 18, height: 48, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   tabBarShell: { height: Platform.OS === 'ios' ? 88 : 80, paddingHorizontal: 13, paddingTop: 5, paddingBottom: Platform.OS === 'ios' ? 8 : 6, backgroundColor: 'transparent' }, tabGlass: { flex: 1, borderRadius: 27, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', shadowOpacity: .14, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 12 }, tabInner: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 5 }, tabItem: { flex: 1, height: 58, alignItems: 'center', justifyContent: 'center' }, tabActiveCapsule: { minWidth: 54, minHeight: 48, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 6 }, tabLabel: { fontSize: 8.5, fontWeight: '800', letterSpacing: -.1 }, centerTabGlass: { width: 48, height: 48, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: .18, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } }, glassHighlight: { position: 'absolute', left: 18, right: 18, top: 1, height: 1, borderRadius: 999, opacity: .8 },
   chatHeader: { height: 78, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, overflow: 'hidden' }, chatHeaderSide: { width: 88, flexDirection: 'row', alignItems: 'center' }, chatHeaderRight: { justifyContent: 'flex-end', gap: 3 }, chatHeaderPersonCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 }, chatHeaderIdentity: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 150 }, chatHeaderName: { fontWeight: '800', fontSize: 12.5, letterSpacing: -.2 }, chatHeaderStatus: { fontSize: 10.5, marginTop: 2, fontWeight: '800' }, metContext: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, marginTop: 8 }, metContextText: { fontSize: 10.5, fontWeight: '700' },
-  chatBody: { flex: 1, overflow: 'hidden' }, messageList: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 20, flexGrow: 1 }, messageLine: { flexDirection: 'row', marginVertical: 2.5 }, messageStack: { maxWidth: '84%' }, bubblePressable: { position: 'relative' }, incomingPressable: { paddingLeft: 4 }, outgoingPressable: { paddingRight: 4 }, bubbleShell: { position: 'relative' }, bubble: { borderRadius: 22, paddingHorizontal: 16, paddingTop: 10.5, paddingBottom: 10.5, overflow: 'hidden', minHeight: 42, justifyContent: 'center' }, outgoingBubble: { borderRadius: 22 }, incomingBubble: { borderRadius: 22 }, outgoingTail: { display: 'none' }, incomingTail: { display: 'none' }, bubbleText: { fontSize: 17, lineHeight: 22.5, letterSpacing: -.2 }, messageMetaOutside: { minHeight: 16, flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, paddingHorizontal: 10 }, bubbleTime: { fontSize: 10, fontWeight: '600' }, replyQuote: { borderLeftWidth: 2, paddingLeft: 7, marginBottom: 7, maxWidth: 220 }, groupSenderName: { fontSize: 10.5, fontWeight: '800', marginLeft: 10, marginBottom: 3 }, reactionBadge: { position: 'absolute', bottom: -12, right: 7, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, borderWidth: StyleSheet.hairlineWidth, shadowColor: '#000', shadowOpacity: .08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  chatBody: { flex: 1, overflow: 'hidden' }, messageList: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 20, flexGrow: 1 }, messageLine: { flexDirection: 'row', marginVertical: 2.5 }, groupMessageLine: { alignItems: 'flex-end', marginVertical: 1.2 }, messageStack: { maxWidth: '84%' }, groupMessageStack: { maxWidth: '78%' }, groupMessageAvatarSlot: { width: 32, minHeight: 28, justifyContent: 'flex-end' }, groupMessageAvatarLeft: { alignItems: 'flex-start', marginRight: 5 }, groupMessageAvatarRight: { alignItems: 'flex-end', marginLeft: 5 }, groupMessageTightSpacer: { height: 1 }, bubblePressable: { position: 'relative' }, incomingPressable: { paddingLeft: 4 }, outgoingPressable: { paddingRight: 4 }, bubbleShell: { position: 'relative' }, bubble: { borderRadius: 22, paddingHorizontal: 16, paddingTop: 10.5, paddingBottom: 10.5, overflow: 'hidden', minHeight: 42, justifyContent: 'center' }, outgoingBubble: { borderRadius: 22 }, incomingBubble: { borderRadius: 22 }, outgoingTail: { display: 'none' }, incomingTail: { display: 'none' }, bubbleText: { fontSize: 17, lineHeight: 22.5, letterSpacing: -.2 }, messageMetaOutside: { minHeight: 16, flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, paddingHorizontal: 10 }, bubbleTime: { fontSize: 10, fontWeight: '600' }, replyQuote: { borderLeftWidth: 2, paddingLeft: 7, marginBottom: 7, maxWidth: 220 }, groupSenderName: { fontSize: 11, fontWeight: '800', marginLeft: 10, marginBottom: 4, marginTop: 8 }, groupSenderNameMine: { marginLeft: 0, marginRight: 10 }, reactionBadge: { position: 'absolute', bottom: -12, right: 7, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3, borderWidth: StyleSheet.hairlineWidth, shadowColor: '#000', shadowOpacity: .08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   photoMessage: { width: 205, height: 154, borderRadius: 17, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, photoMessageImage: { width: '100%', height: '100%' }, voiceMessage: { width: 205, flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 3 }, voicePlay: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   emptyChat: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 120 }, emptyChatIcon: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }, typingLine: { paddingHorizontal: 16, paddingBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 7 }, typingBubble: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 }, replyComposerBar: { marginHorizontal: 10, marginBottom: 4, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
   composerWrap: { flexDirection: 'row', gap: 8, alignItems: 'flex-end', paddingHorizontal: 10, paddingTop: 7, paddingBottom: Platform.OS === 'ios' ? 7 : 10 }, plusButton: { width: 40, height: 40, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', marginBottom: 1 }, composer: { flex: 1, minHeight: 42, maxHeight: 120, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 14, paddingRight: 5, paddingVertical: 4 }, composerInput: { flex: 1, fontSize: 15.5, maxHeight: 100, paddingTop: 7, paddingBottom: 7, letterSpacing: -.1 }, sendButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 5, marginBottom: 1 },
@@ -2374,7 +2497,7 @@ const styles = StyleSheet.create({
   securityIcon: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   securityBody: { fontSize: 13.5, lineHeight: 20, textAlign: 'center', marginTop: 9 },
   securityNotice: { width: '100%', borderRadius: 18, padding: 13, flexDirection: 'row', gap: 9, alignItems: 'flex-start', marginTop: 16 },
-  groupCreateCard: { width: '100%', maxWidth: 460, maxHeight: '88%', borderRadius: 30, padding: 18 }, groupNameInputWrap: { minHeight: 52, borderWidth: StyleSheet.hairlineWidth, borderRadius: 17, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 13, marginTop: 16 }, groupNameInput: { flex: 1, fontSize: 15.5, paddingVertical: 10 }, groupPickerLabel: { fontSize: 13, fontWeight: '900', marginTop: 18, marginBottom: 7 }, groupMemberRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth }, groupCheck: { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' }, groupCreateButton: { minHeight: 52, borderRadius: 17, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  groupCreateCard: { width: '100%', maxWidth: 460, maxHeight: '88%', borderRadius: 30, padding: 18 }, groupInfoCard: { width: '100%', maxWidth: 460, maxHeight: '90%', borderRadius: 30, padding: 18 }, groupInfoHero: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16 }, groupInfoTitle: { fontSize: 20, fontWeight: '900', letterSpacing: -.35 }, groupInfoSub: { fontSize: 11.5, fontWeight: '600', marginTop: 4 }, groupNameSave: { minWidth: 52, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, groupPermissionCard: { minHeight: 74, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12, marginTop: 14 }, groupPermissionIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, groupPermissionHint: { fontSize: 11, lineHeight: 15, marginTop: 7, paddingHorizontal: 4 }, ownerPill: { height: 24, paddingHorizontal: 8, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, ownerPillText: { fontSize: 9.5, fontWeight: '900' }, groupNameInputWrap: { minHeight: 52, borderWidth: StyleSheet.hairlineWidth, borderRadius: 17, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 13, marginTop: 16 }, groupNameInput: { flex: 1, fontSize: 15.5, paddingVertical: 10 }, groupPickerLabel: { fontSize: 13, fontWeight: '900', marginTop: 18, marginBottom: 7 }, groupMemberRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 11, borderBottomWidth: StyleSheet.hairlineWidth }, groupCheck: { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' }, groupCreateButton: { minHeight: 52, borderRadius: 17, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   doubleTapModalCard: { width: '100%', maxWidth: 450, borderRadius: 30, padding: 18 }, doubleTapHero: { borderRadius: 22, padding: 15, flexDirection: 'row', alignItems: 'center', gap: 13, marginTop: 16 }, doubleTapHeroEmoji: { fontSize: 34 }, doubleTapEmojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 16 }, doubleTapEmojiChip: { width: 46, height: 46, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' }, doubleTapEmojiChipText: { fontSize: 22 }, doubleTapCustomInput: { minHeight: 50, borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 13, marginTop: 14 },
 
 });
